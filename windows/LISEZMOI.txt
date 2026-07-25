@@ -1,0 +1,61 @@
+========================================================
+  DIDIKIDS PARC — Gestion des abonnements
+  Installation sur le PC de l'accueil (Windows 10/11)
+========================================================
+
+INSTALLATION (5 minutes, sans internet)
+---------------------------------------
+1. Copiez tout le dossier « DidikidsParc » sur le PC,
+   par exemple dans :  C:\DidikidsParc
+   (PAS dans « Program Files » — le logiciel doit pouvoir
+   écrire sa base de données.)
+
+2. Faites un clic droit sur « Didikids Parc.bat »
+   → Envoyer vers → Bureau (créer un raccourci).
+   Vous pouvez renommer le raccourci « Didikids Parc »
+   et changer son icône si vous voulez.
+
+3. Double-cliquez sur le raccourci :
+   - le serveur démarre (petite fenêtre réduite dans la
+     barre des tâches — ne pas la fermer),
+   - le navigateur s'ouvre tout seul sur l'écran de
+     connexion.
+
+4. Première connexion :  admin / admin123
+   → Changez ce mot de passe immédiatement
+     (menu Employés → Modifier).
+
+DÉMARRAGE AUTOMATIQUE AVEC LE PC (conseillé)
+--------------------------------------------
+1. Appuyez sur  Windows + R , tapez :  shell:startup
+2. Copiez le raccourci « Didikids Parc » dans le dossier
+   qui s'ouvre.
+Le logiciel se lancera tout seul à chaque allumage du PC.
+
+LECTEUR DE CARTES ACR122U
+-------------------------
+1. Branchez le lecteur en USB (Windows installe le pilote
+   tout seul la première fois).
+2. Double-cliquez sur « Lecteur RFID (ACR122U).bat »
+   (mettez aussi son raccourci dans shell:startup).
+3. Posez une carte : l'écran Accueil valide l'entrée
+   automatiquement.
+
+SAUVEGARDE (IMPORTANT)
+----------------------
+Toutes les données (membres, abonnements, paiements,
+visites) sont dans le dossier :  data\
+Copiez ce dossier sur une clé USB régulièrement
+(chaque soir, par exemple). Pour restaurer : remettez-le
+au même endroit.
+
+EN CAS DE PROBLÈME
+------------------
+- Rien ne s'ouvre : vérifiez que la fenêtre « Didikids
+  Parc - Serveur » est bien dans la barre des tâches,
+  puis ouvrez manuellement  http://localhost:8730
+  dans Chrome ou Edge.
+- Le lecteur ne réagit pas : débranchez/rebranchez le
+  lecteur, puis relancez « Lecteur RFID (ACR122U).bat ».
+- Écran de secours : l'UID d'une carte peut toujours être
+  saisi à la main sur la page Accueil.

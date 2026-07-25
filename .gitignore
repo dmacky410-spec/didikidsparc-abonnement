@@ -10,3 +10,6 @@ __pycache__/
 
 # Réglages locaux Claude Code
 .claude/settings.local.json
+
+# Paquets construits
+dist/

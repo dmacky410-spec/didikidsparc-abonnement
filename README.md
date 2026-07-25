@@ -9,7 +9,20 @@ uniquement). Idéal pour un poste d'accueil sans connexion internet fiable.
 
 ---
 
-## 🚀 Démarrage rapide
+## 🪟 Installation sur le PC Windows du parc
+
+Le paquet autonome `dist/DidikidsParc-Windows.zip` contient le logiciel
+**avec Python embarqué** : rien à installer sur le PC, pas d'internet requis.
+Voir `windows/LISEZMOI.txt` (copie du dossier, raccourci Bureau, démarrage
+automatique, lecteur ACR122U inclus).
+
+Pour reconstruire le paquet depuis un Mac/Linux :
+
+```bash
+./windows/build_windows.sh chemin/python-3.12.x-embed-amd64.zip chemin/pyscard-*-win_amd64.whl
+```
+
+## 🚀 Démarrage rapide (développement, Mac/Linux)
 
 ```bash
 python3 server.py
