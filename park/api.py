@@ -602,18 +602,23 @@ def birthdays(conn, days=30):
 
 
 def expiry_reminders(conn, days=7):
-    """Abonnements expirant bientôt, avec message WhatsApp prêt à envoyer."""
+    """Abonnements à renouveler, avec message WhatsApp prêt à envoyer.
+    days=0 : les abonnements déjà expirés au cours des 30 derniers jours."""
     t = today()
-    limit = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
     template = db.get_setting(conn, "whatsapp_expiry_template", "")
+    if days == 0:
+        start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        window = (start, (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d"))
+    else:
+        window = (t, (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d"))
     rows = conn.execute(
         """SELECT s.id, s.end_date, s.entries_left, m.id AS member_id, m.child_name,
                   m.parent_name, m.phone, t.name AS type_name
            FROM subscriptions s
            JOIN members m ON m.id = s.member_id
            JOIN subscription_types t ON t.id = s.type_id
-           WHERE s.status='active' AND s.end_date BETWEEN ? AND ?
-           ORDER BY s.end_date ASC""", (t, limit)).fetchall()
+           WHERE s.status='active' AND m.active=1 AND s.end_date BETWEEN ? AND ?
+           ORDER BY s.end_date ASC""", window).fetchall()
     out = []
     for r in rows:
         item = dict(r)
@@ -916,7 +921,7 @@ def handle(method, path, query, body, user, conn):
 
     if route == "reminders":
         require_admin(user)
-        return expiry_reminders(conn, days=int(query.get("days", 7)))
+        return expiry_reminders(conn, days=max(0, min(90, int(query.get("days", 7)))))
 
     if route == "export" and arg:
         require_super(user)

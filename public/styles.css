@@ -70,6 +70,11 @@ a { color: var(--green-dark); }
 .nav button:hover { background: rgba(255,255,255,.12); }
 .nav button.active { background: var(--yellow); color: var(--text); }
 .nav .icon { font-size: 18px; width: 22px; text-align: center; }
+.nav .nav-count {
+  margin-left: auto; background: var(--yellow); color: var(--text);
+  border-radius: 999px; padding: 1px 9px; font-size: 12px; font-weight: 800;
+}
+.nav button.active .nav-count { background: var(--green-dark); color: #fff; }
 .sidebar .user-box {
   padding: 16px 20px; border-top: 1px solid rgba(255,255,255,.15);
   font-size: 13px;

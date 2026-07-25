@@ -141,6 +141,7 @@ const PAGES = [
   { id: "membres", icon: "🧒", label: "Membres", roles: ["superadmin", "admin", "agent"] },
   { id: "abonnements", icon: "💳", label: "Abonnements", roles: ["superadmin"] },
   { id: "paiements", icon: "💰", label: "Paiements", roles: ["superadmin", "admin"] },
+  { id: "relances", icon: "💬", label: "Relances WhatsApp", roles: ["superadmin", "admin"] },
   { id: "visites", icon: "🕐", label: "Historique visites", roles: ["superadmin", "admin", "agent"] },
   { id: "dashboard", icon: "📊", label: "Tableau de bord", roles: ["superadmin", "admin"] },
   { id: "employes", icon: "👥", label: "Employés", roles: ["superadmin"] },
@@ -196,9 +197,10 @@ function renderLayout() {
   const renderers = {
     accueil: renderAccueil, membres: renderMembres, abonnements: renderAbonnements,
     paiements: renderPaiements, visites: renderVisites, dashboard: renderDashboard,
-    employes: renderEmployes, parametres: renderParametres,
+    employes: renderEmployes, parametres: renderParametres, relances: renderRelances,
   };
   renderers[state.page]();
+  if (isAdmin()) refreshRelanceBadge();
 }
 
 /* ---------------------------------------------------------- mot de passe */
@@ -826,6 +828,111 @@ async function renderVisites() {
       </tbody></table>`;
   }
   load();
+}
+
+/* ---------------------------------------------------------- relances WhatsApp */
+
+/* Petit compteur dans le menu : combien de parents à contacter aujourd'hui */
+async function refreshRelanceBadge() {
+  try {
+    const [exp, bd] = await Promise.all([
+      api("/reminders?days=" + relanceDays()),
+      api("/birthdays?days=30"),
+    ]);
+    const total = exp.length + bd.length;
+    const btn = document.querySelector('[data-page="relances"]');
+    if (btn && total > 0) {
+      btn.insertAdjacentHTML("beforeend",
+        `<span class="nav-count">${total}</span>`);
+    }
+  } catch (e) { /* silencieux : un compteur absent ne doit rien casser */ }
+}
+
+function relanceDays() {
+  return localStorage.getItem("didikids_relance_days") || "7";
+}
+
+async function renderRelances() {
+  const c = $("#page-content");
+  c.innerHTML = `
+    <div class="page-head"><h2>💬 Relances WhatsApp</h2></div>
+    <div class="card">
+      <div class="flex-between">
+        <h3 class="section-title" style="margin:0">⏳ Abonnements à renouveler</h3>
+        <div class="field" style="margin:0">
+          <select id="rl-days" style="padding:8px 14px; border:2px solid var(--border); border-radius:10px">
+            <option value="7">Expirent sous 7 jours</option>
+            <option value="15">Expirent sous 15 jours</option>
+            <option value="30">Expirent sous 30 jours</option>
+            <option value="0">Déjà expirés (30 derniers jours)</option>
+          </select>
+        </div>
+      </div>
+      <div id="rl-expiry" class="mt"><div class="empty">Chargement…</div></div>
+    </div>
+    <div class="card">
+      <h3 class="section-title">🎂 Anniversaires — 30 prochains jours</h3>
+      <div class="muted" style="margin-bottom:10px">Proposez une fête d'anniversaire au parc</div>
+      <div id="rl-birthdays"><div class="empty">Chargement…</div></div>
+    </div>
+    <div class="card" style="background:var(--yellow-pale); box-shadow:none">
+      <b>Comment ça marche</b>
+      <div class="muted mt">Un clic sur le bouton vert ouvre WhatsApp avec le message
+        déjà écrit, adressé au parent. Vous relisez, vous envoyez. Les textes se
+        modifient dans <b>Paramètres → Messages WhatsApp</b>.</div>
+    </div>`;
+
+  $("#rl-days").value = relanceDays();
+  $("#rl-days").addEventListener("change", () => {
+    localStorage.setItem("didikids_relance_days", $("#rl-days").value);
+    loadExpiry();
+  });
+
+  async function loadExpiry() {
+    const days = $("#rl-days").value;
+    const zone = $("#rl-expiry");
+    const list = await api("/reminders?days=" + days).catch((e) => { toast(e.message, "err"); return []; });
+    if (!zone) return;
+    zone.innerHTML = list.length === 0
+      ? '<div class="empty">Personne à relancer sur cette période 👍</div>'
+      : `<table class="data">
+          <thead><tr><th>Enfant</th><th>Parent</th><th>Abonnement</th>
+            <th>Expire le</th><th>Relancer</th></tr></thead>
+          <tbody>${list.map((r) => `
+            <tr><td><b>${esc(r.child_name)}</b></td>
+                <td>${esc(r.parent_name || "—")}<br>
+                    <span class="muted">${esc(r.phone || "pas de téléphone")}</span></td>
+                <td>${esc(r.type_name)}<br>
+                    <span class="muted">${r.entries_left == null ? "illimité" : r.entries_left + " entrée(s) restante(s)"}</span></td>
+                <td><span class="badge ${r.end_date < todayISO() ? "badge-red" : "badge-yellow"}">
+                      ${fmtDate(r.end_date)}</span></td>
+                <td>${waButton(r.whatsapp_phone, r.whatsapp_message)}</td></tr>`).join("")}
+          </tbody></table>`;
+  }
+
+  async function loadBirthdays() {
+    const list = await api("/birthdays?days=30").catch(() => []);
+    const zone = $("#rl-birthdays");
+    if (!zone) return;
+    zone.innerHTML = list.length === 0
+      ? '<div class="empty">Aucun anniversaire dans les 30 prochains jours</div>'
+      : `<table class="data">
+          <thead><tr><th>Enfant</th><th>Parent</th><th>Anniversaire</th>
+            <th>Âge</th><th>Proposer une fête</th></tr></thead>
+          <tbody>${list.map((b) => `
+            <tr><td><b>${esc(b.child_name)}</b></td>
+                <td>${esc(b.parent_name || "—")}<br>
+                    <span class="muted">${esc(b.phone || "pas de téléphone")}</span></td>
+                <td>${fmtDate(b.next_birthday)}<br>
+                    <span class="badge ${b.days_until <= 7 ? "badge-purple" : "badge-gray"}">
+                      ${b.days_until === 0 ? "Aujourd'hui 🎉" : "dans " + b.days_until + " jour(s)"}</span></td>
+                <td><b>${b.turning_age} ans</b></td>
+                <td>${waButton(b.whatsapp_phone, b.whatsapp_message)}</td></tr>`).join("")}
+          </tbody></table>`;
+  }
+
+  loadExpiry();
+  loadBirthdays();
 }
 
 /* ---------------------------------------------------------- tableau de bord */
