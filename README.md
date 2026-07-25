@@ -81,8 +81,11 @@ en temps réel — l'écran d'accueil valide l'entrée automatiquement.
 
 | Rôle | Accès |
 |---|---|
-| **Administrateur** | Tout : membres, ventes, paiements, statistiques, employés |
-| **Agent accueil** | Lecture des cartes, validation des entrées, visites du jour, consultation des membres |
+| **Super administrateur** | Tout, plus ce que personne d'autre ne peut faire : prix et types d'abonnements, modification d'un montant encaissé, annulation d'abonnement, comptes employés, paramètres, exports Excel |
+| **Gérant** | Membres, cartes, ventes **au prix catalogue**, paiements, tableau de bord |
+| **Agent accueil** | Entrées, inscription et modification des membres, attribution et remplacement des cartes, ventes **au prix catalogue** — mais ni revenus, ni statistiques, ni réglages |
+
+Chaque vente et chaque entrée enregistre le nom de l'employé qui l'a faite.
 
 ## 📖 Utilisation quotidienne
 
@@ -93,8 +96,12 @@ en temps réel — l'écran d'accueil valide l'entrée automatiquement.
    choisir la formule → encaisser → le reçu s'imprime.
 4. **À l'entrée** : page Accueil → l'enfant pose sa carte → validation
    automatique (vert = OK, rouge = refusé avec le motif).
-5. **Carte perdue** : fiche du membre → *Bloquer* la carte → attribuer une
-   nouvelle carte. L'ancienne sera refusée à l'accueil.
+5. **Carte perdue** : fiche du membre → *Carte perdue — la remplacer* → passer
+   la nouvelle carte sur le lecteur. En une seule opération l'ancienne est
+   désactivée (refusée à l'accueil) et la nouvelle devient active. L'abonnement,
+   les entrées restantes et l'historique de l'enfant sont conservés.
+   Un enfant n'a qu'une seule carte active à la fois ; les anciennes restent
+   consultables via « Voir les anciennes cartes ».
 
 ## 🗄️ Architecture
 

@@ -128,22 +128,77 @@ def update_member(conn, member_id, body):
 
 # ---------------------------------------------------------------- cartes RFID
 
-def assign_card(conn, body, user):
+def assign_card(conn, body, user, _from_replace=False):
     require(body, "member_id", "uid")
     uid = normalize_uid(body["uid"])
     if not uid:
         raise ApiError(400, "UID invalide")
+    member_id = int(body["member_id"])
+
+    # Un seul badge actif par enfant : sinon deux cartes ouvriraient le même abonnement
+    if not _from_replace:
+        active = conn.execute(
+            "SELECT uid FROM rfid_cards WHERE member_id=? AND status='active'",
+            (member_id,)).fetchone()
+        if active and normalize_uid(active["uid"]) != uid:
+            raise ApiError(409, "Ce membre a déjà une carte active. "
+                                "Utilisez « Carte perdue — la remplacer ».")
+
     existing = conn.execute("SELECT * FROM rfid_cards WHERE uid=?", (uid,)).fetchone()
     if existing:
         if existing["status"] == "active":
             owner = conn.execute("SELECT child_name FROM members WHERE id=?",
                                  (existing["member_id"],)).fetchone()
+            if existing["member_id"] == member_id:
+                raise ApiError(409, "Cette carte est déjà active sur cette fiche")
             raise ApiError(409, f"Cette carte est déjà attribuée à {owner['child_name']}")
-        raise ApiError(409, "Cette carte a été bloquée. Utilisez une autre carte.")
+        # Carte bloquée retrouvée par son propriétaire : on la réactive
+        if existing["member_id"] == member_id:
+            conn.execute(
+                """UPDATE rfid_cards SET status='active', blocked_at=NULL, block_reason=NULL,
+                   assigned_at=?, card_number=? WHERE id=?""",
+                (db.now_iso(), (body.get("card_number") or existing["card_number"] or "").strip(),
+                 existing["id"]))
+            return member_summary(conn, member_id)
+        raise ApiError(409, "Cette carte a été bloquée sur une autre fiche. Utilisez une autre carte.")
     conn.execute(
         "INSERT INTO rfid_cards (uid, card_number, member_id, status, assigned_at) VALUES (?,?,?,?,?)",
-        (uid, (body.get("card_number") or "").strip(), body["member_id"], "active", db.now_iso()))
-    return member_summary(conn, body["member_id"])
+        (uid, (body.get("card_number") or "").strip(), member_id, "active", db.now_iso()))
+    return member_summary(conn, member_id)
+
+
+def replace_card(conn, body, user):
+    """Carte perdue : désactive l'ancienne et enregistre la nouvelle en une seule opération."""
+    require(body, "member_id", "uid")
+    member_id = int(body["member_id"])
+    new_uid = normalize_uid(body["uid"])
+    if not new_uid:
+        raise ApiError(400, "UID invalide")
+
+    old = conn.execute(
+        """SELECT * FROM rfid_cards WHERE member_id=? AND status='active'
+           ORDER BY assigned_at DESC""", (member_id,)).fetchall()
+    if any(normalize_uid(c["uid"]) == new_uid for c in old):
+        raise ApiError(409, "C'est la carte déjà active sur cette fiche — rien à remplacer")
+
+    # La nouvelle carte doit être libre
+    clash = conn.execute("SELECT * FROM rfid_cards WHERE uid=?", (new_uid,)).fetchone()
+    if clash and clash["member_id"] != member_id and clash["status"] == "active":
+        owner = conn.execute("SELECT child_name FROM members WHERE id=?",
+                             (clash["member_id"],)).fetchone()
+        raise ApiError(409, f"Cette nouvelle carte appartient déjà à {owner['child_name']}")
+
+    reason = (body.get("reason") or "Carte perdue").strip()
+    for card in old:
+        conn.execute(
+            "UPDATE rfid_cards SET status='blocked', blocked_at=?, block_reason=? WHERE id=?",
+            (db.now_iso(), reason, card["id"]))
+
+    assign_card(conn, {"member_id": member_id, "uid": new_uid,
+                       "card_number": body.get("card_number")}, user, _from_replace=True)
+    result = member_summary(conn, member_id)
+    result["replaced_count"] = len(old)
+    return result
 
 
 def block_card(conn, card_id, body):
@@ -200,41 +255,6 @@ def sell_subscription(conn, body, user):
         "member": member_summary(conn, member["id"]),
         "receipt": get_receipt(conn, receipt),
     }
-
-
-def quick_sale(conn, body, user):
-    """Vente rapide pour un visiteur de passage (sans fiche membre).
-    Encaisse, enregistre la visite, retourne le reçu."""
-    require(body, "type_id")
-    t = conn.execute("SELECT * FROM subscription_types WHERE id=? AND active=1",
-                     (body["type_id"],)).fetchone()
-    if not t:
-        raise ApiError(404, "Type d'abonnement introuvable")
-
-    quantity = max(1, min(20, int(body.get("quantity", 1))))
-    amount = t["price"] * quantity
-    if user["role"] == "superadmin" and body.get("amount") not in (None, ""):
-        amount = int(body["amount"])
-
-    receipt = next_receipt_number(conn)
-    label = (body.get("label") or "").strip() or "Visiteur"
-    note = f"Vente rapide — {label}" + (f" ×{quantity}" if quantity > 1 else "")
-    conn.execute(
-        """INSERT INTO payments (receipt_number, subscription_id, member_id, amount, method, note, paid_at, user_id)
-           VALUES (?,NULL,NULL,?,?,?,?,?)""",
-        (receipt, amount, body.get("method") or "especes", note, db.now_iso(), user["id"]))
-
-    now = db.now_iso()
-    for _ in range(quantity):
-        conn.execute(
-            """INSERT INTO visits (member_id, subscription_id, card_uid, result, visited_at, user_id)
-               VALUES (NULL,NULL,NULL,'ok',?,?)""", (now, user["id"]))
-
-    r = get_receipt(conn, receipt)
-    r["quick_label"] = label
-    r["quantity"] = quantity
-    r["type_name"] = t["name"] + (f" ×{quantity}" if quantity > 1 else "")
-    return {"receipt": r}
 
 
 def cancel_subscription(conn, sub_id):
@@ -849,23 +869,23 @@ def handle(method, path, query, body, user, conn):
     if route == "visits":
         return list_visits(conn, query, user)
 
-    # --- membres (agents : lecture seule ; création/modif : admin)
+    # --- membres : tout le personnel d'accueil peut inscrire et modifier
     if route == "members":
         if method == "GET" and arg:
             return member_summary(conn, int(arg))
         if method == "GET":
             return list_members(conn, query)
-        require_admin(user)
         if method == "POST":
             return create_member(conn, body, user)
         if method == "PUT" and arg:
             return update_member(conn, int(arg), body)
 
-    # --- tout le reste : admin uniquement
+    # --- cartes RFID : attribution, remplacement et blocage par tout le personnel
     if route == "cards":
-        require_admin(user)
         if method == "POST" and arg and sub == "block":
             return block_card(conn, int(arg), body)
+        if method == "POST" and arg == "replace":
+            return replace_card(conn, body, user)
         if method == "POST":
             return assign_card(conn, body, user)
 
@@ -874,12 +894,9 @@ def handle(method, path, query, body, user, conn):
             require_super(user)
             return cancel_subscription(conn, int(arg))
         if method == "POST":
-            require_admin(user)
+            # Tout le personnel peut vendre, mais au prix catalogue imposé
+            # (seul le super administrateur peut changer un montant)
             return sell_subscription(conn, body, user)
-
-    # Vente rapide (visiteur de passage) — accessible aux agents d'accueil
-    if route == "quicksale" and method == "POST":
-        return quick_sale(conn, body, user)
 
     if route == "birthdays":
         require_admin(user)

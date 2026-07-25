@@ -39,7 +39,7 @@ async function api(path, opts = {}) {
 /* Nom à afficher pour une visite : membre, visiteur de passage, ou carte inconnue */
 function visitLabel(v) {
   if (v.child_name) return esc(v.child_name);
-  if (!v.card_uid) return '<span class="muted">Visiteur (entrée simple)</span>';
+  if (!v.card_uid) return '<span class="muted">Visiteur</span>';
   return '<span class="muted">Carte inconnue</span>';
 }
 
@@ -238,10 +238,7 @@ async function renderAccueil() {
   const c = $("#page-content");
   c.innerHTML = `
     <div class="page-head"><h2>🎟️ Contrôle des entrées</h2>
-      <div style="display:flex; gap:10px; align-items:center">
-        <button class="btn btn-yellow" id="quick-sale">⚡ Entrée simple (visiteur)</button>
-        <span class="badge badge-green" id="sse-badge">Lecteur en attente…</span>
-      </div></div>
+      <span class="badge badge-green" id="sse-badge">Lecteur en attente…</span></div>
     <div class="checkin-grid">
       <div>
         <div class="card scan-box">
@@ -258,8 +255,6 @@ async function renderAccueil() {
         <div id="today-visits"><div class="empty">Chargement…</div></div>
       </div>
     </div>`;
-
-  $("#quick-sale").addEventListener("click", quickSaleForm);
 
   const input = $("#scan-input");
   input.focus();
@@ -345,88 +340,16 @@ async function renderAccueil() {
   loadTodayVisits();
 }
 
-/* ---------------------------------------------------------- vente rapide (visiteur) */
-
-async function quickSaleForm() {
-  const types = await api("/types").catch(() => []);
-  const simple = types.filter((t) => t.active && t.entries === 1);
-  const activeTypes = simple.length ? simple : types.filter((t) => t.active);
-  let selected = activeTypes[0] || null;
-
-  const { el, close } = modal(`
-    <h3>⚡ Entrée simple — visiteur de passage</h3>
-    <div class="muted">Sans fiche membre : on encaisse, on imprime le reçu, l'enfant entre.</div>
-    <div class="type-cards mt" id="q-types">
-      ${activeTypes.map((t, i) => `
-        <div class="type-card ${i === 0 ? "selected" : ""}" data-type="${t.id}">
-          <div class="tc-name">${esc(t.name)}</div>
-          <div class="tc-price">${GNF(t.price)}</div>
-          <div class="tc-info">${t.entries == null ? "Illimité" : t.entries + " entrée(s)"}</div>
-        </div>`).join("")}
-    </div>
-    <div class="grid-2 mt">
-      <div class="field"><label>Nombre d'enfants</label>
-        <input id="q-qty" type="number" min="1" max="20" value="1"></div>
-      <div class="field"><label>Mode de paiement</label>
-        <select id="q-method">
-          <option value="especes">Espèces</option>
-          <option value="orange_money">Orange Money</option>
-          <option value="mtn_momo">MTN MoMo</option>
-          <option value="carte">Carte bancaire</option>
-        </select></div>
-    </div>
-    <div class="field"><label>Nom du visiteur (optionnel, pour le reçu)</label>
-      <input id="q-label" placeholder="Visiteur"></div>
-    <div class="card" style="background:var(--green-pale); box-shadow:none; margin:0">
-      <div class="flex-between"><b>Total à encaisser</b>
-        <span class="badge badge-yellow" style="font-size:17px" id="q-total">—</span></div>
-    </div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" id="q-cancel">Annuler</button>
-      <button class="btn btn-green" id="q-save">Encaisser et imprimer</button>
-    </div>`, true);
-
-  const refreshTotal = () => {
-    const qty = Math.max(1, Math.min(20, +$("#q-qty", el).value || 1));
-    $("#q-total", el).textContent = selected ? GNF(selected.price * qty) : "—";
-  };
-  el.querySelectorAll("[data-type]").forEach((card) =>
-    card.addEventListener("click", () => {
-      el.querySelectorAll(".type-card").forEach((c) => c.classList.remove("selected"));
-      card.classList.add("selected");
-      selected = activeTypes.find((t) => t.id === +card.dataset.type);
-      refreshTotal();
-    }));
-  $("#q-qty", el).addEventListener("input", refreshTotal);
-  refreshTotal();
-
-  $("#q-cancel", el).addEventListener("click", close);
-  $("#q-save", el).addEventListener("click", async () => {
-    if (!selected) return toast("Choisissez un tarif", "err");
-    try {
-      const r = await api("/quicksale", { method: "POST", body: {
-        type_id: selected.id, quantity: +$("#q-qty", el).value || 1,
-        method: $("#q-method", el).value, label: $("#q-label", el).value,
-      } });
-      toast("Entrée encaissée ✓", "ok");
-      close();
-      printReceipt(r.receipt);
-      if (state.page === "accueil") go("accueil");
-    } catch (err) { toast(err.message, "err"); }
-  });
-}
-
 /* ---------------------------------------------------------- page membres */
 
 async function renderMembres() {
   const c = $("#page-content");
-  const isAdmin = ["admin", "superadmin"].includes(state.user.role);
   c.innerHTML = `
     <div class="page-head"><h2>🧒 Membres</h2>
       <div style="display:flex; gap:10px">
         <input class="search-input" id="mb-search" placeholder="🔍 Rechercher nom, téléphone, code…">
         ${isSuper() ? '<button class="btn btn-ghost" id="mb-export">📊 Excel</button>' : ""}
-        ${isAdmin ? '<button class="btn btn-yellow" id="mb-new">+ Nouveau membre</button>' : ""}
+        <button class="btn btn-yellow" id="mb-new">+ Nouveau membre</button>
       </div></div>
     <div class="card"><div id="mb-list"><div class="empty">Chargement…</div></div></div>`;
 
@@ -435,7 +358,10 @@ async function renderMembres() {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(load, 250);
   });
-  if (isAdmin) $("#mb-new").addEventListener("click", () => memberForm(null, load));
+  $("#mb-new").addEventListener("click", () => memberForm(null, (saved) => {
+    load();
+    openMember(saved.id, load);   // enchaîner directement sur l'attribution de la carte
+  }));
   if (isSuper()) $("#mb-export").addEventListener("click",
     () => { window.location = "/api/export/members"; });
 
@@ -507,22 +433,23 @@ function memberForm(member, onSaved) {
 }
 
 async function openMember(id, onChange) {
-  const isAdmin = ["admin", "superadmin"].includes(state.user.role);
   let m = await api("/members/" + id).catch((e) => { toast(e.message, "err"); });
   if (!m) return;
 
   const { el, close } = modal("", true);
   el.addEventListener("remove", () => { state.scanTarget = null; });
+  let showOldCards = false;
 
   function render() {
     const s = m.current_subscription;
-    const activeCard = m.cards.find((c) => c.status === "active");
+    const activeCards = m.cards.filter((c) => c.status === "active");
+    const oldCards = m.cards.filter((c) => c.status !== "active");
     $(".modal", el).innerHTML = `
       <div class="flex-between">
         <h3>🧒 ${esc(m.child_name)} <span class="muted" style="font-size:14px">${esc(m.code)}</span></h3>
         <div>
-          ${isAdmin ? `<button class="btn btn-ghost btn-sm" id="d-edit">✏️ Modifier</button>
-                       <button class="btn btn-yellow btn-sm" id="d-sell">💳 Vendre un abonnement</button>` : ""}
+          <button class="btn btn-ghost btn-sm" id="d-edit">✏️ Modifier</button>
+          <button class="btn btn-yellow btn-sm" id="d-sell">💳 Vendre un abonnement</button>
         </div>
       </div>
       <div class="grid-2 mt">
@@ -540,21 +467,34 @@ async function openMember(id, onChange) {
       </div>
       <hr style="border:none; border-top:2px solid var(--green-pale); margin:16px 0">
       <div class="flex-between">
-        <h3 class="section-title" style="margin:0">💳 Cartes RFID</h3>
-        ${isAdmin ? '<button class="btn btn-green btn-sm" id="d-addcard">+ Attribuer une carte</button>' : ""}
+        <h3 class="section-title" style="margin:0">💳 Carte RFID</h3>
+        <div>
+          ${activeCards.length
+            ? '<button class="btn btn-red btn-sm" id="d-replace">🔄 Carte perdue — la remplacer</button>'
+            : '<button class="btn btn-green btn-sm" id="d-addcard">+ Attribuer une carte</button>'}
+        </div>
       </div>
       <div id="d-cards" class="mt">
-        ${m.cards.length === 0 ? '<div class="muted">Aucune carte attribuée</div>' : `
-        <table class="data"><thead><tr><th>UID</th><th>N° carte</th><th>Statut</th><th>Attribuée le</th><th></th></tr></thead>
-        <tbody>${m.cards.map((card) => `
+        ${activeCards.length === 0 ? '<div class="muted">Aucune carte active — attribuez-en une</div>' : `
+        <table class="data"><thead><tr><th>UID</th><th>N° carte</th><th>Statut</th><th>Attribuée le</th></tr></thead>
+        <tbody>${activeCards.map((card) => `
           <tr><td><code>${esc(card.uid)}</code></td>
               <td>${esc(card.card_number || "—")}</td>
-              <td>${card.status === "active" ? '<span class="badge badge-green">Active</span>'
-                   : `<span class="badge badge-red" title="${esc(card.block_reason || "")}">Bloquée</span>`}</td>
-              <td>${fmtDate(card.assigned_at.slice(0, 10))}</td>
-              <td>${card.status === "active" && isAdmin
-                    ? `<button class="btn btn-red btn-sm" data-block="${card.id}">Bloquer</button>` : ""}</td></tr>`).join("")}
+              <td><span class="badge badge-green">Active</span></td>
+              <td>${fmtDate(card.assigned_at.slice(0, 10))}</td></tr>`).join("")}
         </tbody></table>`}
+        ${oldCards.length ? `
+          <button class="btn btn-ghost btn-sm mt" id="d-oldcards">
+            ${showOldCards ? "▾ Masquer" : "▸ Voir"} les ${oldCards.length} ancienne(s) carte(s)
+          </button>
+          ${showOldCards ? `
+          <table class="data mt"><thead><tr><th>UID</th><th>N° carte</th><th>Motif</th><th>Retirée le</th></tr></thead>
+          <tbody>${oldCards.map((card) => `
+            <tr><td><code class="muted">${esc(card.uid)}</code></td>
+                <td class="muted">${esc(card.card_number || "—")}</td>
+                <td><span class="badge badge-red">${esc(card.block_reason || "Bloquée")}</span></td>
+                <td class="muted">${card.blocked_at ? fmtDate(card.blocked_at.slice(0, 10)) : "—"}</td></tr>`).join("")}
+          </tbody></table>` : ""}` : ""}
       </div>
       <h3 class="section-title mt">📋 Abonnements</h3>
       ${m.subscriptions.length === 0 ? '<div class="muted">Aucun abonnement</div>' : `
@@ -573,39 +513,59 @@ async function openMember(id, onChange) {
       <div class="modal-actions"><button class="btn btn-ghost" id="d-close">Fermer</button></div>`;
 
     $("#d-close", el).addEventListener("click", () => { state.scanTarget = null; close(); if (onChange) onChange(); });
-    if (isAdmin) {
-      $("#d-edit", el).addEventListener("click", () => memberForm(m, (updated) => { m = updated; render(); }));
-      $("#d-sell", el).addEventListener("click", () => sellSubscription(m, (updated) => { m = updated; render(); }));
-      $("#d-addcard", el).addEventListener("click", assignCardFlow);
-      el.querySelectorAll("[data-block]").forEach((b) =>
-        b.addEventListener("click", async () => {
-          if (!confirm("Bloquer cette carte (perdue/volée) ? Elle sera refusée à l'accueil.")) return;
-          try {
-            m = await api("/cards/" + b.dataset.block + "/block", { method: "POST", body: { reason: "Carte perdue" } });
-            toast("Carte bloquée", "ok"); render();
-          } catch (err) { toast(err.message, "err"); }
-        }));
-    }
+    $("#d-edit", el).addEventListener("click", () => memberForm(m, (updated) => { m = updated; render(); }));
+    $("#d-sell", el).addEventListener("click", () => sellSubscription(m, (updated) => { m = updated; render(); }));
+    if ($("#d-addcard", el)) $("#d-addcard", el).addEventListener("click", () => cardFlow(false));
+    if ($("#d-replace", el)) $("#d-replace", el).addEventListener("click", () => cardFlow(true));
+    if ($("#d-oldcards", el)) $("#d-oldcards", el).addEventListener("click",
+      () => { showOldCards = !showOldCards; render(); });
   }
 
-  function assignCardFlow() {
+  /* Attribution d'une carte, ou remplacement d'une carte perdue */
+  function cardFlow(isReplacement) {
+    const current = m.cards.filter((c) => c.status === "active");
     const inner = modal(`
-      <h3>Attribuer une carte RFID</h3>
-      <div class="muted">Passez la carte sur le lecteur — l'UID se remplit automatiquement.</div>
-      <div class="field mt"><label>UID de la carte *</label>
+      <h3>${isReplacement ? "🔄 Remplacer la carte perdue" : "💳 Attribuer une carte"}</h3>
+      ${isReplacement ? `
+        <div class="card" style="background:var(--red-pale); box-shadow:none; padding:14px; margin-bottom:14px">
+          <b>Ancienne carte retirée :</b>
+          ${current.map((c) => `<code>${esc(c.uid)}</code>`).join(", ")}
+          <div class="muted" style="margin-top:6px">Elle sera refusée à l'accueil dès maintenant.
+            L'abonnement et l'historique de l'enfant sont conservés.</div>
+        </div>` : ""}
+      <div class="muted">Passez la ${isReplacement ? "nouvelle " : ""}carte sur le lecteur —
+        l'UID se remplit automatiquement.</div>
+      <div class="field mt"><label>UID de la ${isReplacement ? "nouvelle " : ""}carte *</label>
         <input id="ac-uid" class="scan-input" style="max-width:100%" placeholder="En attente de la carte…" autofocus></div>
       <div class="field"><label>Numéro imprimé sur la carte (optionnel)</label><input id="ac-num"></div>
+      ${isReplacement ? `
+        <div class="field"><label>Motif</label>
+          <select id="ac-reason">
+            <option value="Carte perdue">Carte perdue</option>
+            <option value="Carte volée">Carte volée</option>
+            <option value="Carte abîmée / illisible">Carte abîmée / illisible</option>
+            <option value="Remplacement demandé">Remplacement demandé</option>
+          </select></div>` : ""}
       <div class="modal-actions">
         <button class="btn btn-ghost" id="ac-cancel">Annuler</button>
-        <button class="btn btn-green" id="ac-save">Attribuer</button>
+        <button class="btn ${isReplacement ? "btn-red" : "btn-green"}" id="ac-save">
+          ${isReplacement ? "Remplacer la carte" : "Attribuer"}</button>
       </div>`);
     state.scanTarget = (uid) => { const f = $("#ac-uid", inner.el); if (f) f.value = uid; };
     $("#ac-cancel", inner.el).addEventListener("click", () => { state.scanTarget = null; inner.close(); });
     $("#ac-save", inner.el).addEventListener("click", async () => {
+      const uid = $("#ac-uid", inner.el).value.trim();
+      if (!uid) return toast("Passez la carte sur le lecteur", "err");
       try {
-        m = await api("/cards", { method: "POST", body: {
-          member_id: m.id, uid: $("#ac-uid", inner.el).value, card_number: $("#ac-num", inner.el).value } });
-        toast("Carte attribuée ✓", "ok");
+        const body = { member_id: m.id, uid, card_number: $("#ac-num", inner.el).value };
+        if (isReplacement) {
+          body.reason = $("#ac-reason", inner.el).value;
+          m = await api("/cards/replace", { method: "POST", body });
+          toast("Nouvelle carte active ✓ L'ancienne est désactivée", "ok");
+        } else {
+          m = await api("/cards", { method: "POST", body });
+          toast("Carte attribuée ✓", "ok");
+        }
         state.scanTarget = null; inner.close(); render();
       } catch (err) { toast(err.message, "err"); }
     });
@@ -687,10 +647,8 @@ function printReceipt(r) {
       <div class="r-row"><span>Date</span><span>${fmtDateTime(r.paid_at)}</span></div>
       <div class="r-row"><span>Caissier</span><span>${esc(r.cashier || "")}</span></div>
       <hr>
-      <div class="r-row"><span>${r.member_code ? "Membre" : "Client"}</span>
-        <b>${esc(r.child_name || r.quick_label || "Visiteur")}</b></div>
+      <div class="r-row"><span>Membre</span><b>${esc(r.child_name || "—")}</b></div>
       ${r.member_code ? `<div class="r-row"><span>Code</span><span>${esc(r.member_code)}</span></div>` : ""}
-      ${!r.member_code && r.quantity > 1 ? `<div class="r-row"><span>Nombre d'enfants</span><b>${r.quantity}</b></div>` : ""}
       ${r.type_name ? `
         <div class="r-row"><span>Abonnement</span><b>${esc(r.type_name)}</b></div>
         <div class="r-row"><span>Validité</span><span>${fmtDate(r.start_date)} → ${fmtDate(r.end_date)}</span></div>
