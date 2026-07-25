@@ -10,6 +10,7 @@ import queue
 import sys
 import threading
 import urllib.parse
+import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -225,6 +226,8 @@ def main():
     print(f"  Jeton pont RFID (bridge/acr122u_bridge.py) : {scan_token}")
     print("  Compte initial : admin / admin123  (a changer !)")
     print("=" * 56)
+    if os.environ.get("NO_BROWSER") != "1":
+        threading.Timer(1.0, lambda: webbrowser.open(f"http://localhost:{PORT}")).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
