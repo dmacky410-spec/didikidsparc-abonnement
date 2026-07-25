@@ -799,9 +799,21 @@ def change_own_password(conn, body, user):
 
 # ---------------------------------------------------------------- paramètres
 
-def get_settings(conn):
-    return {r["key"]: r["value"] for r in conn.execute(
+def get_settings(conn, user=None):
+    settings = {r["key"]: r["value"] for r in conn.execute(
         "SELECT key, value FROM settings WHERE key != 'scan_token'")}
+    # Le jeton du lecteur RFID n'est visible que par le super administrateur
+    if user and user["role"] == "superadmin":
+        settings["scan_token"] = db.get_setting(conn, "scan_token", "")
+    return settings
+
+
+def reset_scan_token(conn):
+    """Renouvelle le jeton du lecteur (si un ancien poste ne doit plus l'utiliser)."""
+    import secrets
+    token = secrets.token_hex(16)
+    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('scan_token', ?)", (token,))
+    return {"scan_token": token}
 
 
 def save_settings(conn, body):
@@ -941,8 +953,10 @@ def handle(method, path, query, body, user, conn):
 
     if route == "settings":
         if method == "GET":
-            return get_settings(conn)
+            return get_settings(conn, user)
         require_super(user)
+        if method == "POST" and arg == "scantoken":
+            return reset_scan_token(conn)
         if method == "POST":
             return save_settings(conn, body)
 

@@ -1,0 +1,14 @@
+# Configuration du lecteur de cartes RFID (ACR122U)
+#
+# Recopiez ici les deux valeurs affichees dans le logiciel :
+#   Parametres -> Lecteur RFID (ACR122U) -> bouton "Copier les deux lignes"
+#
+# Exemple :
+#   SERVEUR=https://didikidsparc-production.up.railway.app
+#   JETON=3f9a1c8b7e2d4a6f5b0c9d8e7f6a5b4c
+#
+# Laissez les lignes ci-dessous telles quelles si le logiciel tourne
+# directement sur ce PC (mode local, sans internet).
+
+SERVEUR=http://localhost:8730
+JETON=

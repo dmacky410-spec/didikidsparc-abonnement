@@ -1070,11 +1070,18 @@ async function renderParametres() {
     </div>
     <div class="card" style="max-width:560px">
       <h3 class="section-title">🔌 Lecteur RFID (ACR122U)</h3>
-      <div class="muted">Lancez le pont sur ce poste :<br>
-        <code>python3 bridge/acr122u_bridge.py</code><br><br>
-        Le jeton de connexion s'affiche au démarrage du serveur.
-        Les lecteurs « émulation clavier » fonctionnent aussi : cliquez simplement
-        dans le champ de saisie de la page Accueil.</div>
+      <div class="muted">Sur le PC de l'accueil, ouvrez le fichier
+        <code>config_lecteur.txt</code> du dossier du logiciel et recopiez-y ces
+        deux lignes, puis lancez « Lecteur RFID (ACR122U) » :</div>
+      <div class="field mt"><label>Adresse du serveur</label>
+        <input id="set-srv" readonly value="${esc(location.origin)}"></div>
+      <div class="field"><label>Code de sécurité du lecteur (jeton)</label>
+        <input id="set-token" readonly value="${esc(s.scan_token || "")}"></div>
+      <button class="btn btn-ghost btn-sm" id="set-copy">📋 Copier les deux lignes</button>
+      <button class="btn btn-ghost btn-sm" id="set-newtoken">🔄 Renouveler le code</button>
+      <div class="muted mt" style="font-size:12px">Renouvelez le code si un ancien
+        poste ne doit plus envoyer de lectures. Les lecteurs « émulation clavier »
+        n'ont besoin de rien : cliquez dans le champ de la page Accueil.</div>
     </div>`;
   const saveSettings = async (body) => {
     try {
@@ -1094,6 +1101,24 @@ async function renderParametres() {
     whatsapp_expiry_template: $("#set-wa-exp").value,
     whatsapp_birthday_template: $("#set-wa-bd").value,
   }));
+  $("#set-copy").addEventListener("click", async () => {
+    const text = `SERVEUR=${$("#set-srv").value}\nJETON=${$("#set-token").value}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      toast("Copié ✓ Collez-le dans config_lecteur.txt", "ok");
+    } catch (e) {
+      $("#set-token").select();
+      toast("Copie automatique refusée — sélectionnez et copiez à la main", "err");
+    }
+  });
+  $("#set-newtoken").addEventListener("click", async () => {
+    if (!confirm("Renouveler le code ? Les lecteurs déjà configurés devront être mis à jour.")) return;
+    try {
+      const r = await api("/settings/scantoken", { method: "POST", body: {} });
+      $("#set-token").value = r.scan_token;
+      toast("Nouveau code généré ✓", "ok");
+    } catch (err) { toast(err.message, "err"); }
+  });
 }
 
 /* ---------------------------------------------------------- démarrage */

@@ -33,7 +33,8 @@ unzip -q "$PYSCARD_WHL" -d "$PKG/python/Lib/site-packages"
 python3 - "$ROOT" "$PKG" <<'EOF'
 import sys, pathlib
 root, pkg = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
-for name in ["Didikids Parc.bat", "Lecteur RFID (ACR122U).bat", "LISEZMOI.txt"]:
+for name in ["Didikids Parc.bat", "Lecteur RFID (ACR122U).bat", "LISEZMOI.txt",
+             "config_lecteur.txt"]:
     text = (root / "windows" / name).read_text(encoding="utf-8")
     data = text.replace("\r\n", "\n").replace("\n", "\r\n")
     if name.endswith(".txt"):

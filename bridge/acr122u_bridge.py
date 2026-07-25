@@ -45,14 +45,35 @@ def find_reader():
     return rs[0] if rs else None
 
 
+def read_config():
+    """Lit config_lecteur.txt (SERVEUR= / JETON=) placé à côté du logiciel."""
+    import os
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(here, "config_lecteur.txt")
+    config = {}
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8-sig") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                config[key.strip().upper()] = value.strip()
+    return config
+
+
 def main():
+    config = read_config()
     parser = argparse.ArgumentParser(description="Pont ACR122U → Didikids Parc")
-    parser.add_argument("--server", default="http://localhost:8730")
-    parser.add_argument("--token", default="")
+    parser.add_argument("--server", default=config.get("SERVEUR") or "http://localhost:8730")
+    parser.add_argument("--token", default=config.get("JETON", ""))
     args = parser.parse_args()
 
     print("Pont RFID Didikids Parc — Ctrl+C pour arrêter")
     print(f"Serveur : {args.server}")
+    if not args.token and not args.server.startswith("http://localhost"):
+        print("ATTENTION : aucun jeton. Recopiez SERVEUR et JETON depuis")
+        print("            la page Parametres du logiciel dans config_lecteur.txt")
 
     last_uid, last_time = None, 0
     reader = None

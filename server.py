@@ -7,6 +7,7 @@ Aucune dépendance externe — bibliothèque standard Python uniquement.
 import json
 import os
 import queue
+import secrets
 import sys
 import threading
 import urllib.parse
@@ -167,10 +168,17 @@ class Handler(BaseHTTPRequestHandler):
             expected = db.get_setting(conn, "scan_token", "")
         finally:
             conn.close()
-        is_local = self.client_address[0] in ("127.0.0.1", "::1")
+        # Dispense de jeton uniquement pour le pont installé sur CE poste.
+        # Derrière un proxy (cloud), l'adresse source est celle du proxy :
+        # on n'accorde alors aucune confiance à l'adresse et le jeton est exigé.
+        behind_proxy = bool(self.headers.get("X-Forwarded-For")
+                            or self.headers.get("X-Forwarded-Proto")
+                            or self.headers.get("X-Real-IP"))
+        is_local = (not behind_proxy
+                    and self.client_address[0] in ("127.0.0.1", "::1"))
         if not uid:
             return self.send_json(400, {"error": "uid manquant"})
-        if not is_local and token != expected:
+        if not is_local and not (expected and secrets.compare_digest(token, expected)):
             return self.send_json(403, {"error": "jeton de scan invalide"})
         sse_broadcast({"type": "scan", "uid": api.normalize_uid(uid)})
         self.send_json(200, {"ok": True})
