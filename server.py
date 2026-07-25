@@ -119,8 +119,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Length", str(len(payload)))
+                # Cookie marqué Secure derrière un proxy HTTPS (cloud)
+                secure = "; Secure" if self.headers.get(
+                    "X-Forwarded-Proto", "").lower() == "https" else ""
                 self.send_header("Set-Cookie",
-                                 f"didikids_session={token}; HttpOnly; Path=/; SameSite=Strict; Max-Age=50400")
+                                 f"didikids_session={token}; HttpOnly; Path=/; "
+                                 f"SameSite=Strict; Max-Age=50400{secure}")
                 self.end_headers()
                 self.wfile.write(payload)
                 return

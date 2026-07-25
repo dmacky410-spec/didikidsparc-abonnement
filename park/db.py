@@ -120,6 +120,8 @@ CREATE INDEX IF NOT EXISTS idx_payments_date   ON payments(paid_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
 """
 
+DEFAULT_PASSWORD = "admin123"
+
 DEFAULT_TYPES = [
     ("Entrée simple", 50000, 1, 1),
     ("Mensuel 4 entrées", 180000, 4, 30),
@@ -244,17 +246,20 @@ def init():
             (secrets.token_hex(16),),
         )
 
-    # Compte administrateur par défaut (mot de passe à changer à la première connexion)
+    # Compte super administrateur initial.
+    # En cloud, définir ADMIN_USERNAME / ADMIN_PASSWORD évite le mot de passe par défaut.
     if conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
         from park.auth import hash_password
+        username = os.environ.get("ADMIN_USERNAME", "admin").strip() or "admin"
+        password = os.environ.get("ADMIN_PASSWORD", "").strip() or DEFAULT_PASSWORD
         conn.execute(
             "INSERT INTO employees (full_name, position, hired_at) VALUES (?,?,?)",
-            ("Administrateur", "Gérant", now_iso()[:10]),
+            ("Administrateur", "Super administrateur", now_iso()[:10]),
         )
         emp_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         conn.execute(
             "INSERT INTO users (username, password_hash, role, employee_id, created_at) VALUES (?,?,?,?,?)",
-            ("admin", hash_password("admin123"), "superadmin", emp_id, now_iso()),
+            (username, hash_password(password), "superadmin", emp_id, now_iso()),
         )
 
     conn.commit()

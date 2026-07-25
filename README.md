@@ -9,6 +9,24 @@ uniquement). Idéal pour un poste d'accueil sans connexion internet fiable.
 
 ---
 
+## ☁️ Déploiement cloud (Railway)
+
+Le dépôt contient tout le nécessaire (`Dockerfile`, `railway.json`) :
+
+1. **railway.app** → *Login with GitHub* → *New Project* → *Deploy from GitHub repo*
+   → choisir `didikidsparc-abonnement`.
+2. **Ajouter un volume** (`⌘K` → *New Volume*) avec le chemin de montage
+   **`/app/data`** — c'est ce qui rend les données permanentes.
+3. **Variables d'environnement** (onglet *Variables*) :
+   - `ADMIN_USERNAME` : votre identifiant de super administrateur
+   - `ADMIN_PASSWORD` : un mot de passe solide (évite le compte d'usine)
+4. *Settings* → *Networking* → **Generate Domain** (ou un domaine personnalisé
+   du type `gestion.didikidsparc.com`).
+
+Chaque `git push` redéploie automatiquement. Le poste d'accueil ouvre simplement
+cette adresse dans Chrome ; le pont RFID local pointe vers elle avec
+`--server https://votre-adresse --token <jeton>`.
+
 ## 🪟 Installation sur le PC Windows du parc
 
 Le paquet autonome `dist/DidikidsParc-Windows.zip` contient le logiciel

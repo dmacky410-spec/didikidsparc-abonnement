@@ -118,8 +118,8 @@ function renderLogin() {
   $("#login-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     try {
-      const data = await api("/login", { method: "POST", body: { username: $("#lg-user").value, password: $("#lg-pass").value } });
-      state.user = data.user;
+      await api("/login", { method: "POST", body: { username: $("#lg-user").value, password: $("#lg-pass").value } });
+      state.user = await api("/me");
       connectSSE();
       go("accueil");
     } catch (err) { toast(err.message, "err"); }
@@ -168,13 +168,25 @@ function renderLayout() {
         <div class="user-box">
           <div class="name">${esc(state.user.full_name)}</div>
           <div class="role">${ROLE_LABELS[state.user.role] || state.user.role}</div>
+          <button class="btn btn-ghost btn-sm" id="pwd-btn" style="margin-bottom:6px">🔑 Mot de passe</button>
           <button class="btn btn-ghost btn-sm" id="logout-btn">Déconnexion</button>
         </div>
       </aside>
-      <main class="main" id="page-content"></main>
+      <main class="main">
+        ${state.user.default_password ? `
+          <div class="card" style="background:var(--red-pale); border:2px solid var(--red); box-shadow:none">
+            <b style="color:var(--red)">⚠️ Sécurité : votre mot de passe est encore celui d'usine.</b>
+            <div class="muted mt">Changez-le maintenant — n'importe qui pourrait accéder aux
+              données du parc.</div>
+            <button class="btn btn-red btn-sm mt" id="pwd-alert">🔑 Changer mon mot de passe</button>
+          </div>` : ""}
+        <div id="page-content"></div>
+      </main>
     </div>`;
   app.querySelectorAll("[data-page]").forEach((b) =>
     b.addEventListener("click", () => go(b.dataset.page)));
+  $("#pwd-btn").addEventListener("click", passwordForm);
+  if ($("#pwd-alert")) $("#pwd-alert").addEventListener("click", passwordForm);
   $("#logout-btn").addEventListener("click", async () => {
     await api("/logout", { method: "POST", body: {} }).catch(() => {});
     state.user = null;
@@ -187,6 +199,37 @@ function renderLayout() {
     employes: renderEmployes, parametres: renderParametres,
   };
   renderers[state.page]();
+}
+
+/* ---------------------------------------------------------- mot de passe */
+
+function passwordForm() {
+  const { el, close } = modal(`
+    <h3>🔑 Changer mon mot de passe</h3>
+    <div class="field"><label>Mot de passe actuel</label>
+      <input id="pw-old" type="password" autocomplete="current-password" autofocus></div>
+    <div class="field"><label>Nouveau mot de passe (6 caractères minimum)</label>
+      <input id="pw-new" type="password" autocomplete="new-password"></div>
+    <div class="field"><label>Confirmer le nouveau mot de passe</label>
+      <input id="pw-new2" type="password" autocomplete="new-password"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="pw-cancel">Annuler</button>
+      <button class="btn btn-green" id="pw-save">Enregistrer</button>
+    </div>`);
+  $("#pw-cancel", el).addEventListener("click", close);
+  $("#pw-save", el).addEventListener("click", async () => {
+    const pw = $("#pw-new", el).value;
+    if (pw !== $("#pw-new2", el).value) return toast("Les deux mots de passe ne correspondent pas", "err");
+    if (pw.length < 6) return toast("6 caractères minimum", "err");
+    try {
+      await api("/password", { method: "POST", body: {
+        current_password: $("#pw-old", el).value, new_password: pw } });
+      toast("Mot de passe modifié ✓", "ok");
+      state.user.default_password = false;
+      close();
+      renderLayout();
+    } catch (err) { toast(err.message, "err"); }
+  });
 }
 
 /* ---------------------------------------------------------- page accueil */

@@ -759,6 +759,24 @@ def update_user(conn, user_id, body, current_user):
     return list_users(conn)
 
 
+def uses_default_password(conn, user_id):
+    """Alerte de sécurité : le compte utilise-t-il encore le mot de passe d'usine ?"""
+    row = conn.execute("SELECT password_hash FROM users WHERE id=?", (user_id,)).fetchone()
+    return bool(row) and verify_password(db.DEFAULT_PASSWORD, row["password_hash"])
+
+
+def change_own_password(conn, body, user):
+    require(body, "current_password", "new_password")
+    if len(body["new_password"]) < 6:
+        raise ApiError(400, "Le nouveau mot de passe doit faire au moins 6 caractères")
+    row = conn.execute("SELECT password_hash FROM users WHERE id=?", (user["id"],)).fetchone()
+    if not verify_password(body["current_password"], row["password_hash"]):
+        raise ApiError(403, "Mot de passe actuel incorrect")
+    conn.execute("UPDATE users SET password_hash=? WHERE id=?",
+                 (hash_password(body["new_password"]), user["id"]))
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------- paramètres
 
 def get_settings(conn):
@@ -814,9 +832,14 @@ def handle(method, path, query, body, user, conn):
         delete_session(conn, body.get("_token", ""))
         return {"ok": True}
 
+    # Tout employé peut changer son propre mot de passe
+    if route == "password" and method == "POST":
+        return change_own_password(conn, body, user)
+
     if route == "me":
         return {"id": user["id"], "username": user["username"], "role": user["role"],
-                "full_name": user["full_name"] or user["username"]}
+                "full_name": user["full_name"] or user["username"],
+                "default_password": uses_default_password(conn, user["id"])}
 
     # --- accueil (accessible aux agents)
     if route == "checkin" and method == "POST":
