@@ -202,6 +202,41 @@ def sell_subscription(conn, body, user):
     }
 
 
+def quick_sale(conn, body, user):
+    """Vente rapide pour un visiteur de passage (sans fiche membre).
+    Encaisse, enregistre la visite, retourne le reçu."""
+    require(body, "type_id")
+    t = conn.execute("SELECT * FROM subscription_types WHERE id=? AND active=1",
+                     (body["type_id"],)).fetchone()
+    if not t:
+        raise ApiError(404, "Type d'abonnement introuvable")
+
+    quantity = max(1, min(20, int(body.get("quantity", 1))))
+    amount = t["price"] * quantity
+    if user["role"] == "superadmin" and body.get("amount") not in (None, ""):
+        amount = int(body["amount"])
+
+    receipt = next_receipt_number(conn)
+    label = (body.get("label") or "").strip() or "Visiteur"
+    note = f"Vente rapide — {label}" + (f" ×{quantity}" if quantity > 1 else "")
+    conn.execute(
+        """INSERT INTO payments (receipt_number, subscription_id, member_id, amount, method, note, paid_at, user_id)
+           VALUES (?,NULL,NULL,?,?,?,?,?)""",
+        (receipt, amount, body.get("method") or "especes", note, db.now_iso(), user["id"]))
+
+    now = db.now_iso()
+    for _ in range(quantity):
+        conn.execute(
+            """INSERT INTO visits (member_id, subscription_id, card_uid, result, visited_at, user_id)
+               VALUES (NULL,NULL,NULL,'ok',?,?)""", (now, user["id"]))
+
+    r = get_receipt(conn, receipt)
+    r["quick_label"] = label
+    r["quantity"] = quantity
+    r["type_name"] = t["name"] + (f" ×{quantity}" if quantity > 1 else "")
+    return {"receipt": r}
+
+
 def cancel_subscription(conn, sub_id):
     sub = conn.execute("SELECT * FROM subscriptions WHERE id=?", (sub_id,)).fetchone()
     if not sub:
@@ -269,22 +304,67 @@ def check_in(conn, body, user):
            WHERE member_id=? AND result='ok' AND visited_at LIKE ?""",
         (member["id"], today() + "%")).fetchone()["c"]
 
-    if sub["entries_left"] is not None:
+    # Fidélité : la Nième visite payante est offerte (n'entame pas le quota)
+    reward = loyalty_check(conn, member["id"])
+    if not reward and sub["entries_left"] is not None:
         conn.execute("UPDATE subscriptions SET entries_left = entries_left - 1 WHERE id=?",
                      (sub["id"],))
 
     conn.execute(
-        """INSERT INTO visits (member_id, subscription_id, card_uid, result, visited_at, user_id)
-           VALUES (?,?,?,'ok',?,?)""",
-        (member["id"], sub["id"], uid, now, user["id"]))
+        """INSERT INTO visits (member_id, subscription_id, card_uid, result, visited_at, user_id, free_reward)
+           VALUES (?,?,?,'ok',?,?,?)""",
+        (member["id"], sub["id"], uid, now, user["id"], 1 if reward else 0))
 
-    return {
+    result = {
         "allowed": True,
         "uid": uid,
         "member": member_summary(conn, member["id"]),
         "already_today": already,
         "visited_at": now,
+        "free_reward": reward,
     }
+    result["loyalty"] = loyalty_status(conn, member["id"])
+    return result
+
+
+# ---------------------------------------------------------------- fidélité
+
+def loyalty_config(conn):
+    enabled = db.get_setting(conn, "loyalty_enabled", "1") == "1"
+    try:
+        threshold = int(db.get_setting(conn, "loyalty_threshold", "10"))
+    except (TypeError, ValueError):
+        threshold = 10
+    return enabled, max(2, threshold)
+
+
+def loyalty_status(conn, member_id):
+    """Nombre de visites payantes depuis la dernière visite offerte."""
+    enabled, threshold = loyalty_config(conn)
+    if not enabled:
+        return None
+    last_reward = conn.execute(
+        """SELECT visited_at FROM visits WHERE member_id=? AND free_reward=1
+           ORDER BY visited_at DESC LIMIT 1""", (member_id,)).fetchone()
+    params = [member_id]
+    sql = "SELECT COUNT(*) AS c FROM visits WHERE member_id=? AND result='ok' AND free_reward=0"
+    if last_reward:
+        sql += " AND visited_at > ?"
+        params.append(last_reward["visited_at"])
+    paid = conn.execute(sql, params).fetchone()["c"]
+    return {"paid_visits": paid, "threshold": threshold,
+            "remaining": max(0, threshold - paid)}
+
+
+def loyalty_check(conn, member_id):
+    """True si cette visite doit être offerte (seuil atteint)."""
+    status = loyalty_status(conn, member_id)
+    if not status:
+        return False
+    already_today = conn.execute(
+        """SELECT COUNT(*) AS c FROM visits WHERE member_id=? AND free_reward=1
+           AND visited_at LIKE ?""", (member_id, today() + "%")).fetchone()["c"]
+    return status["paid_visits"] >= status["threshold"] and already_today == 0
 
 
 # ---------------------------------------------------------------- paiements
@@ -302,7 +382,7 @@ def get_receipt(conn, receipt_number):
                   t.name AS type_name, s.start_date, s.end_date, s.entries_total,
                   e.full_name AS cashier
            FROM payments p
-           JOIN members m ON m.id = p.member_id
+           LEFT JOIN members m ON m.id = p.member_id
            LEFT JOIN subscriptions s ON s.id = p.subscription_id
            LEFT JOIN subscription_types t ON t.id = s.type_id
            LEFT JOIN users u ON u.id = p.user_id
@@ -322,7 +402,7 @@ def list_payments(conn, query):
     sql = """SELECT p.*, m.child_name, m.code AS member_code, t.name AS type_name,
                     e.full_name AS cashier
              FROM payments p
-             JOIN members m ON m.id = p.member_id
+             LEFT JOIN members m ON m.id = p.member_id
              LEFT JOIN subscriptions s ON s.id = p.subscription_id
              LEFT JOIN subscription_types t ON t.id = s.type_id
              LEFT JOIN users u ON u.id = p.user_id
@@ -400,14 +480,7 @@ def dashboard(conn):
         "month": one("SELECT COUNT(*) FROM visits WHERE result='ok' AND visited_at >= ?", month_start),
     }
 
-    expiring = [dict(r) for r in conn.execute(
-        """SELECT s.id, s.end_date, s.entries_left, m.id AS member_id, m.child_name,
-                  m.phone, t.name AS type_name
-           FROM subscriptions s
-           JOIN members m ON m.id = s.member_id
-           JOIN subscription_types t ON t.id = s.type_id
-           WHERE s.status='active' AND s.end_date BETWEEN ? AND ?
-           ORDER BY s.end_date ASC LIMIT 20""", (t, in_7_days))]
+    expiring = expiry_reminders(conn, days=7)[:20]
 
     # Visites par jour — 14 derniers jours
     days = []
@@ -426,6 +499,16 @@ def dashboard(conn):
 
     recent_members = one("SELECT COUNT(*) FROM members WHERE created_at >= ?", month_start)
 
+    # Caisse du jour par employé (contrôle de fermeture)
+    cash_today = [dict(r) for r in conn.execute(
+        """SELECT COALESCE(e.full_name, u.username) AS employee,
+                  COUNT(*) AS count, SUM(p.amount) AS total
+           FROM payments p
+           LEFT JOIN users u ON u.id = p.user_id
+           LEFT JOIN employees e ON e.id = u.employee_id
+           WHERE p.paid_at LIKE ?
+           GROUP BY p.user_id ORDER BY total DESC""", (t + "%",))]
+
     return {
         "active_members": active_members,
         "total_members": one("SELECT COUNT(*) FROM members WHERE active=1"),
@@ -433,9 +516,159 @@ def dashboard(conn):
         "revenue": revenue,
         "visits": visits,
         "expiring_soon": expiring,
+        "birthdays": birthdays(conn, days=30)[:20],
         "visits_by_day": days,
         "peak_hours": peak_hours,
+        "cash_today": cash_today,
+        "free_visits_month": one(
+            "SELECT COUNT(*) FROM visits WHERE free_reward=1 AND visited_at >= ?", month_start),
     }
+
+
+# ---------------------------------------------------------------- anniversaires & relances
+
+def clean_phone(phone):
+    """Format international pour WhatsApp (Guinée = +224 par défaut)."""
+    digits = "".join(c for c in (phone or "") if c.isdigit())
+    if not digits:
+        return ""
+    if digits.startswith("00"):
+        digits = digits[2:]
+    if len(digits) == 9 and digits.startswith("6"):   # numéro local guinéen
+        digits = "224" + digits
+    return digits
+
+
+def fill_template(template, **values):
+    out = template
+    for key, value in values.items():
+        out = out.replace("{" + key + "}", str(value))
+    return out
+
+
+def birthdays(conn, days=30):
+    """Anniversaires à venir — pour proposer les packs fête."""
+    now = datetime.now()
+    rows = conn.execute(
+        """SELECT id, code, child_name, parent_name, phone, birth_date
+           FROM members WHERE active=1 AND birth_date IS NOT NULL AND birth_date != ''""").fetchall()
+    template = db.get_setting(conn, "whatsapp_birthday_template", "")
+    upcoming = []
+    for r in rows:
+        try:
+            bd = datetime.strptime(r["birth_date"], "%Y-%m-%d")
+        except ValueError:
+            continue
+        next_bd = bd.replace(year=now.year)
+        if next_bd.date() < now.date():
+            next_bd = bd.replace(year=now.year + 1)
+        delta = (next_bd.date() - now.date()).days
+        if delta > days:
+            continue
+        age = next_bd.year - bd.year
+        item = dict(r)
+        item.update({
+            "next_birthday": next_bd.strftime("%Y-%m-%d"),
+            "days_until": delta,
+            "turning_age": age,
+            "whatsapp_phone": clean_phone(r["phone"]),
+            "whatsapp_message": fill_template(
+                template, parent=r["parent_name"] or "cher parent",
+                enfant=r["child_name"], date=next_bd.strftime("%d/%m/%Y"), age=age),
+        })
+        upcoming.append(item)
+    upcoming.sort(key=lambda x: x["days_until"])
+    return upcoming
+
+
+def expiry_reminders(conn, days=7):
+    """Abonnements expirant bientôt, avec message WhatsApp prêt à envoyer."""
+    t = today()
+    limit = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
+    template = db.get_setting(conn, "whatsapp_expiry_template", "")
+    rows = conn.execute(
+        """SELECT s.id, s.end_date, s.entries_left, m.id AS member_id, m.child_name,
+                  m.parent_name, m.phone, t.name AS type_name
+           FROM subscriptions s
+           JOIN members m ON m.id = s.member_id
+           JOIN subscription_types t ON t.id = s.type_id
+           WHERE s.status='active' AND s.end_date BETWEEN ? AND ?
+           ORDER BY s.end_date ASC""", (t, limit)).fetchall()
+    out = []
+    for r in rows:
+        item = dict(r)
+        item["whatsapp_phone"] = clean_phone(r["phone"])
+        item["whatsapp_message"] = fill_template(
+            template, parent=r["parent_name"] or "cher parent", enfant=r["child_name"],
+            expiration=fmt_fr(r["end_date"]),
+            restantes="illimité" if r["entries_left"] is None else r["entries_left"],
+            abonnement=r["type_name"])
+        out.append(item)
+    return out
+
+
+def fmt_fr(iso_date):
+    try:
+        return datetime.strptime(iso_date, "%Y-%m-%d").strftime("%d/%m/%Y")
+    except (ValueError, TypeError):
+        return iso_date or ""
+
+
+# ---------------------------------------------------------------- export comptable
+
+def export_csv(conn, kind, query):
+    """Export CSV (ouvrable dans Excel) des paiements ou des visites."""
+    import csv
+    import io
+    buf = io.StringIO()
+    writer = csv.writer(buf, delimiter=";")
+
+    if kind == "payments":
+        data = list_payments(conn, query)
+        writer.writerow(["Recu", "Date", "Heure", "Membre", "Code", "Abonnement",
+                         "Mode de paiement", "Montant GNF", "Encaisse par", "Note"])
+        for p in data["payments"]:
+            writer.writerow([
+                p["receipt_number"], fmt_fr(p["paid_at"][:10]), p["paid_at"][11:16],
+                p["child_name"] or "Visiteur", p["member_code"] or "",
+                p["type_name"] or "", p["method"], p["amount"],
+                p["cashier"] or "", p["note"] or ""])
+        writer.writerow([])
+        writer.writerow(["", "", "", "", "", "", "TOTAL", data["total"]])
+        filename = "paiements"
+    elif kind == "visits":
+        visits = list_visits(conn, query, {"role": "superadmin"})
+        writer.writerow(["Date", "Heure", "Membre", "Code", "Resultat",
+                         "Motif refus", "Offerte", "Validee par"])
+        for v in visits:
+            writer.writerow([
+                fmt_fr(v["visited_at"][:10]), v["visited_at"][11:16],
+                v["child_name"] or "Visiteur", v["member_code"] or "",
+                "Entree OK" if v["result"] == "ok" else "Refus",
+                v["refusal_reason"] or "", "Oui" if v.get("free_reward") else "",
+                v["agent"] or ""])
+        filename = "visites"
+    elif kind == "members":
+        writer.writerow(["Code", "Enfant", "Parent", "Telephone", "Email",
+                         "Naissance", "Abonnement actuel", "Entrees restantes",
+                         "Expiration", "Total visites", "Inscrit le"])
+        for m in list_members(conn, {}):
+            s = m.get("current_subscription")
+            visits = conn.execute(
+                "SELECT COUNT(*) AS c FROM visits WHERE member_id=? AND result='ok'",
+                (m["id"],)).fetchone()["c"]
+            writer.writerow([
+                m["code"], m["child_name"], m["parent_name"] or "", m["phone"] or "",
+                m["email"] or "", fmt_fr(m["birth_date"]) if m["birth_date"] else "",
+                s["type_name"] if s else "Aucun",
+                ("Illimite" if s["entries_left"] is None else s["entries_left"]) if s else "",
+                fmt_fr(s["end_date"]) if s else "", visits, fmt_fr(m["created_at"][:10])])
+        filename = "membres"
+    else:
+        raise ApiError(404, "Export inconnu")
+
+    return {"_csv": buf.getvalue(),
+            "_filename": f"didikids_{filename}_{today()}.csv"}
 
 
 # ---------------------------------------------------------------- types d'abonnements
@@ -534,10 +767,20 @@ def get_settings(conn):
 
 
 def save_settings(conn, body):
-    for key in ("park_name", "receipt_footer", "park_phone", "park_address"):
+    for key in ("park_name", "receipt_footer", "park_phone", "park_address",
+                "loyalty_enabled", "loyalty_threshold",
+                "whatsapp_expiry_template", "whatsapp_birthday_template"):
         if key in body:
+            value = body[key]
+            if key == "loyalty_enabled":
+                value = "1" if value in (True, "1", "true", "on") else "0"
+            if key == "loyalty_threshold":
+                try:
+                    value = str(max(2, int(value)))
+                except (TypeError, ValueError):
+                    continue
             conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)",
-                         (key, str(body[key])))
+                         (key, str(value)))
     return get_settings(conn)
 
 
@@ -610,6 +853,22 @@ def handle(method, path, query, body, user, conn):
         if method == "POST":
             require_admin(user)
             return sell_subscription(conn, body, user)
+
+    # Vente rapide (visiteur de passage) — accessible aux agents d'accueil
+    if route == "quicksale" and method == "POST":
+        return quick_sale(conn, body, user)
+
+    if route == "birthdays":
+        require_admin(user)
+        return birthdays(conn, days=int(query.get("days", 30)))
+
+    if route == "reminders":
+        require_admin(user)
+        return expiry_reminders(conn, days=int(query.get("days", 7)))
+
+    if route == "export" and arg:
+        require_super(user)
+        return export_csv(conn, arg, query)
 
     if route == "types":
         if method == "GET":

@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS payments (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   receipt_number  TEXT NOT NULL UNIQUE,
   subscription_id INTEGER REFERENCES subscriptions(id),
-  member_id       INTEGER NOT NULL REFERENCES members(id),
+  member_id       INTEGER REFERENCES members(id),   -- NULL = visiteur (vente rapide)
   amount          INTEGER NOT NULL,
   method          TEXT NOT NULL DEFAULT 'especes',
   note            TEXT,
@@ -103,7 +103,8 @@ CREATE TABLE IF NOT EXISTS visits (
   result          TEXT NOT NULL CHECK (result IN ('ok','refused')),
   refusal_reason  TEXT,
   visited_at      TEXT NOT NULL,
-  user_id         INTEGER REFERENCES users(id)
+  user_id         INTEGER REFERENCES users(id),
+  free_reward     INTEGER NOT NULL DEFAULT 0   -- 1 = visite offerte (fidélité)
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -131,6 +132,16 @@ DEFAULT_SETTINGS = {
     "receipt_footer": "Merci de votre visite ! Parce que chaque enfant mérite de s'épanouir.",
     "park_phone": "",
     "park_address": "Conakry, Guinée",
+    "loyalty_enabled": "1",
+    "loyalty_threshold": "10",       # visites payantes avant une visite offerte
+    "whatsapp_expiry_template": (
+        "Bonjour {parent} ! 🐻 L'abonnement de {enfant} au Didikids Parc "
+        "expire le {expiration} ({restantes} entrée(s) restante(s)). "
+        "Souhaitez-vous le renouveler ? À très bientôt !"),
+    "whatsapp_birthday_template": (
+        "Bonjour {parent} ! 🎂 L'anniversaire de {enfant} approche ({date}). "
+        "Le Didikids Parc organise des fêtes inoubliables : mini-foot, piscine à balles, "
+        "toboggan, zone Lego et arcade. Voulez-vous réserver ?"),
 }
 
 
@@ -175,12 +186,45 @@ def _migrate_roles(conn):
         conn.execute("UPDATE users SET role='superadmin' WHERE id=?", (first_admin[0],))
 
 
+def _migrate_columns(conn):
+    """Ajoute les colonnes apparues après la première version."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(visits)")}
+    if "free_reward" not in cols:
+        conn.execute("ALTER TABLE visits ADD COLUMN free_reward INTEGER NOT NULL DEFAULT 0")
+
+    # payments.member_id devient nullable (ventes rapides sans fiche membre)
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='payments'").fetchone()
+    if row and "member_id       INTEGER NOT NULL REFERENCES members(id)" in row[0]:
+        conn.executescript("""
+            PRAGMA foreign_keys=OFF;
+            CREATE TABLE payments_new (
+              id              INTEGER PRIMARY KEY AUTOINCREMENT,
+              receipt_number  TEXT NOT NULL UNIQUE,
+              subscription_id INTEGER REFERENCES subscriptions(id),
+              member_id       INTEGER REFERENCES members(id),
+              amount          INTEGER NOT NULL,
+              method          TEXT NOT NULL DEFAULT 'especes',
+              note            TEXT,
+              paid_at         TEXT NOT NULL,
+              user_id         INTEGER REFERENCES users(id)
+            );
+            INSERT INTO payments_new SELECT id, receipt_number, subscription_id, member_id,
+                   amount, method, note, paid_at, user_id FROM payments;
+            DROP TABLE payments;
+            ALTER TABLE payments_new RENAME TO payments;
+            CREATE INDEX IF NOT EXISTS idx_payments_date ON payments(paid_at);
+            PRAGMA foreign_keys=ON;
+        """)
+
+
 def init():
     os.makedirs(DATA_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA journal_mode = WAL")
     conn.executescript(SCHEMA)
     _migrate_roles(conn)
+    _migrate_columns(conn)
 
     # Types d'abonnements par défaut
     if conn.execute("SELECT COUNT(*) FROM subscription_types").fetchone()[0] == 0:

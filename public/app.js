@@ -36,6 +36,21 @@ async function api(path, opts = {}) {
   return data;
 }
 
+/* Nom à afficher pour une visite : membre, visiteur de passage, ou carte inconnue */
+function visitLabel(v) {
+  if (v.child_name) return esc(v.child_name);
+  if (!v.card_uid) return '<span class="muted">Visiteur (entrée simple)</span>';
+  return '<span class="muted">Carte inconnue</span>';
+}
+
+/* Bouton de relance WhatsApp — ouvre WhatsApp avec le message prérempli */
+function waButton(phone, message) {
+  if (!phone) return '<span class="muted" style="font-size:12px">Pas de téléphone</span>';
+  const url = `https://wa.me/${phone}?text=${encodeURIComponent(message || "")}`;
+  return `<a class="btn btn-sm" style="background:#25d366; color:#fff; text-decoration:none"
+             href="${url}" target="_blank" rel="noopener">💬 WhatsApp</a>`;
+}
+
 function toast(msg, kind = "") {
   const el = document.createElement("div");
   el.className = "toast " + kind;
@@ -180,7 +195,10 @@ async function renderAccueil() {
   const c = $("#page-content");
   c.innerHTML = `
     <div class="page-head"><h2>🎟️ Contrôle des entrées</h2>
-      <span class="badge badge-green" id="sse-badge">Lecteur en attente…</span></div>
+      <div style="display:flex; gap:10px; align-items:center">
+        <button class="btn btn-yellow" id="quick-sale">⚡ Entrée simple (visiteur)</button>
+        <span class="badge badge-green" id="sse-badge">Lecteur en attente…</span>
+      </div></div>
     <div class="checkin-grid">
       <div>
         <div class="card scan-box">
@@ -197,6 +215,8 @@ async function renderAccueil() {
         <div id="today-visits"><div class="empty">Chargement…</div></div>
       </div>
     </div>`;
+
+  $("#quick-sale").addEventListener("click", quickSaleForm);
 
   const input = $("#scan-input");
   input.focus();
@@ -236,15 +256,18 @@ async function renderAccueil() {
       const entries = s ? (s.entries_left == null ? "∞" : s.entries_left) : "0";
       const expiry = s ? fmtDate(s.end_date) : (m.subscriptions[0] ? fmtDate(m.subscriptions[0].end_date) : "—");
       const subName = s ? s.type_name : (m.subscriptions[0] ? m.subscriptions[0].type_name : "");
+      const loy = r.loyalty;
       zone.innerHTML = `
         <div class="result-card result-ok">
-          <div class="verdict">✅ ENTRÉE AUTORISÉE</div>
+          <div class="verdict">${r.free_reward ? "🎁 VISITE OFFERTE !" : "✅ ENTRÉE AUTORISÉE"}</div>
           <div class="member-name">${esc(m.child_name)}</div>
           <div class="sub-line">${esc(m.code)} · ${esc(subName)}</div>
           <div class="result-stats">
             <div class="stat"><div class="v">${entries}</div><div class="l">Entrées restantes</div></div>
             <div class="stat"><div class="v" style="font-size:17px; padding-top:6px">${expiry}</div><div class="l">Expire le</div></div>
+            ${loy ? `<div class="stat"><div class="v">${loy.remaining}</div><div class="l">Avant visite offerte</div></div>` : ""}
           </div>
+          ${r.free_reward ? '<div class="warn-line" style="background:#f3e5ff; color:var(--purple)">🎁 Fidélité : cette entrée est gratuite, le quota n\'a pas été entamé</div>' : ""}
           ${r.already_today ? `<div class="warn-line">⚠️ Déjà passé ${r.already_today} fois aujourd'hui</div>` : ""}
         </div>`;
     } else {
@@ -271,12 +294,83 @@ async function renderAccueil() {
          <table class="data"><tbody>
           ${todays.slice(0, 15).map((v) => `
             <tr><td>${v.visited_at.slice(11, 16)}</td>
-                <td>${esc(v.child_name || "Carte inconnue")}</td>
+                <td>${visitLabel(v)}${v.free_reward ? ' <span class="badge badge-purple">🎁</span>' : ""}</td>
                 <td>${v.result === "ok" ? '<span class="badge badge-green">OK</span>'
                     : `<span class="badge badge-red" title="${esc(v.refusal_reason)}">Refus</span>`}</td></tr>`).join("")}
          </tbody></table>`;
   }
   loadTodayVisits();
+}
+
+/* ---------------------------------------------------------- vente rapide (visiteur) */
+
+async function quickSaleForm() {
+  const types = await api("/types").catch(() => []);
+  const simple = types.filter((t) => t.active && t.entries === 1);
+  const activeTypes = simple.length ? simple : types.filter((t) => t.active);
+  let selected = activeTypes[0] || null;
+
+  const { el, close } = modal(`
+    <h3>⚡ Entrée simple — visiteur de passage</h3>
+    <div class="muted">Sans fiche membre : on encaisse, on imprime le reçu, l'enfant entre.</div>
+    <div class="type-cards mt" id="q-types">
+      ${activeTypes.map((t, i) => `
+        <div class="type-card ${i === 0 ? "selected" : ""}" data-type="${t.id}">
+          <div class="tc-name">${esc(t.name)}</div>
+          <div class="tc-price">${GNF(t.price)}</div>
+          <div class="tc-info">${t.entries == null ? "Illimité" : t.entries + " entrée(s)"}</div>
+        </div>`).join("")}
+    </div>
+    <div class="grid-2 mt">
+      <div class="field"><label>Nombre d'enfants</label>
+        <input id="q-qty" type="number" min="1" max="20" value="1"></div>
+      <div class="field"><label>Mode de paiement</label>
+        <select id="q-method">
+          <option value="especes">Espèces</option>
+          <option value="orange_money">Orange Money</option>
+          <option value="mtn_momo">MTN MoMo</option>
+          <option value="carte">Carte bancaire</option>
+        </select></div>
+    </div>
+    <div class="field"><label>Nom du visiteur (optionnel, pour le reçu)</label>
+      <input id="q-label" placeholder="Visiteur"></div>
+    <div class="card" style="background:var(--green-pale); box-shadow:none; margin:0">
+      <div class="flex-between"><b>Total à encaisser</b>
+        <span class="badge badge-yellow" style="font-size:17px" id="q-total">—</span></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="q-cancel">Annuler</button>
+      <button class="btn btn-green" id="q-save">Encaisser et imprimer</button>
+    </div>`, true);
+
+  const refreshTotal = () => {
+    const qty = Math.max(1, Math.min(20, +$("#q-qty", el).value || 1));
+    $("#q-total", el).textContent = selected ? GNF(selected.price * qty) : "—";
+  };
+  el.querySelectorAll("[data-type]").forEach((card) =>
+    card.addEventListener("click", () => {
+      el.querySelectorAll(".type-card").forEach((c) => c.classList.remove("selected"));
+      card.classList.add("selected");
+      selected = activeTypes.find((t) => t.id === +card.dataset.type);
+      refreshTotal();
+    }));
+  $("#q-qty", el).addEventListener("input", refreshTotal);
+  refreshTotal();
+
+  $("#q-cancel", el).addEventListener("click", close);
+  $("#q-save", el).addEventListener("click", async () => {
+    if (!selected) return toast("Choisissez un tarif", "err");
+    try {
+      const r = await api("/quicksale", { method: "POST", body: {
+        type_id: selected.id, quantity: +$("#q-qty", el).value || 1,
+        method: $("#q-method", el).value, label: $("#q-label", el).value,
+      } });
+      toast("Entrée encaissée ✓", "ok");
+      close();
+      printReceipt(r.receipt);
+      if (state.page === "accueil") go("accueil");
+    } catch (err) { toast(err.message, "err"); }
+  });
 }
 
 /* ---------------------------------------------------------- page membres */
@@ -288,6 +382,7 @@ async function renderMembres() {
     <div class="page-head"><h2>🧒 Membres</h2>
       <div style="display:flex; gap:10px">
         <input class="search-input" id="mb-search" placeholder="🔍 Rechercher nom, téléphone, code…">
+        ${isSuper() ? '<button class="btn btn-ghost" id="mb-export">📊 Excel</button>' : ""}
         ${isAdmin ? '<button class="btn btn-yellow" id="mb-new">+ Nouveau membre</button>' : ""}
       </div></div>
     <div class="card"><div id="mb-list"><div class="empty">Chargement…</div></div></div>`;
@@ -297,7 +392,9 @@ async function renderMembres() {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(load, 250);
   });
-  if (isAdmin) $("#mb-new").addEventListener("click", () => memberForm());
+  if (isAdmin) $("#mb-new").addEventListener("click", () => memberForm(null, load));
+  if (isSuper()) $("#mb-export").addEventListener("click",
+    () => { window.location = "/api/export/members"; });
 
   async function load() {
     const q = encodeURIComponent($("#mb-search").value.trim());
@@ -547,8 +644,10 @@ function printReceipt(r) {
       <div class="r-row"><span>Date</span><span>${fmtDateTime(r.paid_at)}</span></div>
       <div class="r-row"><span>Caissier</span><span>${esc(r.cashier || "")}</span></div>
       <hr>
-      <div class="r-row"><span>Membre</span><b>${esc(r.child_name)}</b></div>
-      <div class="r-row"><span>Code</span><span>${esc(r.member_code)}</span></div>
+      <div class="r-row"><span>${r.member_code ? "Membre" : "Client"}</span>
+        <b>${esc(r.child_name || r.quick_label || "Visiteur")}</b></div>
+      ${r.member_code ? `<div class="r-row"><span>Code</span><span>${esc(r.member_code)}</span></div>` : ""}
+      ${!r.member_code && r.quantity > 1 ? `<div class="r-row"><span>Nombre d'enfants</span><b>${r.quantity}</b></div>` : ""}
       ${r.type_name ? `
         <div class="r-row"><span>Abonnement</span><b>${esc(r.type_name)}</b></div>
         <div class="r-row"><span>Validité</span><span>${fmtDate(r.start_date)} → ${fmtDate(r.end_date)}</span></div>
@@ -626,7 +725,8 @@ function typeForm(t, onSaved) {
 async function renderPaiements() {
   const c = $("#page-content");
   c.innerHTML = `
-    <div class="page-head"><h2>💰 Paiements</h2></div>
+    <div class="page-head"><h2>💰 Paiements</h2>
+      ${isSuper() ? '<button class="btn btn-ghost" id="p-export">📊 Exporter vers Excel</button>' : ""}</div>
     <div class="card">
       <div class="filters">
         <div class="field"><label>Du</label><input type="date" id="p-from"></div>
@@ -636,6 +736,14 @@ async function renderPaiements() {
       <div id="p-list"><div class="empty">Chargement…</div></div>
     </div>`;
   $("#p-filter").addEventListener("click", load);
+  if (isSuper()) {
+    $("#p-export").addEventListener("click", () => {
+      const params = new URLSearchParams();
+      if ($("#p-from").value) params.set("from", $("#p-from").value);
+      if ($("#p-to").value) params.set("to", $("#p-to").value);
+      window.location = "/api/export/payments?" + params;
+    });
+  }
 
   async function load() {
     const params = new URLSearchParams();
@@ -654,7 +762,7 @@ async function renderPaiements() {
       <tbody>${data.payments.map((p) => `
         <tr><td>${esc(p.receipt_number)}</td>
             <td>${fmtDateTime(p.paid_at)}</td>
-            <td><b>${esc(p.child_name)}</b></td>
+            <td><b>${p.child_name ? esc(p.child_name) : '<span class="muted">Visiteur</span>'}</b></td>
             <td>${esc(p.type_name || "—")}</td>
             <td>${esc(p.method)}</td>
             <td>${esc(p.cashier || "—")}</td>
@@ -676,7 +784,8 @@ async function renderVisites() {
   const c = $("#page-content");
   const isAdmin = ["admin", "superadmin"].includes(state.user.role);
   c.innerHTML = `
-    <div class="page-head"><h2>🕐 Historique des visites</h2></div>
+    <div class="page-head"><h2>🕐 Historique des visites</h2>
+      ${isSuper() ? '<button class="btn btn-ghost" id="v-export">📊 Exporter vers Excel</button>' : ""}</div>
     <div class="card">
       ${isAdmin ? `<div class="filters">
         <div class="field"><label>Du</label><input type="date" id="v-from"></div>
@@ -686,6 +795,14 @@ async function renderVisites() {
       <div id="v-list"><div class="empty">Chargement…</div></div>
     </div>`;
   if (isAdmin) $("#v-filter").addEventListener("click", load);
+  if (isSuper()) {
+    $("#v-export").addEventListener("click", () => {
+      const params = new URLSearchParams();
+      if ($("#v-from").value) params.set("from", $("#v-from").value);
+      if ($("#v-to").value) params.set("to", $("#v-to").value);
+      window.location = "/api/export/visits?" + params;
+    });
+  }
 
   async function load() {
     const params = new URLSearchParams();
@@ -700,7 +817,8 @@ async function renderVisites() {
       <tbody>${visits.map((v) => `
         <tr><td>${fmtDate(v.visited_at.slice(0, 10))}</td>
             <td>${v.visited_at.slice(11, 16)}</td>
-            <td><b>${esc(v.child_name || "Carte inconnue")}</b> <span class="muted">${esc(v.member_code || "")}</span></td>
+            <td><b>${visitLabel(v)}</b> <span class="muted">${esc(v.member_code || "")}</span>
+                ${v.free_reward ? '<span class="badge badge-purple">🎁 Offerte</span>' : ""}</td>
             <td>${v.result === "ok" ? '<span class="badge badge-green">Entrée OK</span>'
                  : `<span class="badge badge-red">${esc(v.refusal_reason || "Refusé")}</span>`}</td>
             <td>${esc(v.agent || "—")}</td></tr>`).join("")}
@@ -744,12 +862,41 @@ async function renderDashboard() {
       <div class="card">
         <h3 class="section-title">⏳ Abonnements expirant sous 7 jours</h3>
         ${d.expiring_soon.length === 0 ? '<div class="empty">Aucune expiration proche</div>' : `
-        <table class="data"><thead><tr><th>Membre</th><th>Type</th><th>Expire le</th><th>Téléphone</th></tr></thead>
+        <table class="data"><thead><tr><th>Membre</th><th>Expire le</th><th>Relance</th></tr></thead>
         <tbody>${d.expiring_soon.map((s) => `
-          <tr><td><b>${esc(s.child_name)}</b></td><td>${esc(s.type_name)}</td>
+          <tr><td><b>${esc(s.child_name)}</b><br><span class="muted">${esc(s.type_name)}</span></td>
               <td><span class="badge badge-yellow">${fmtDate(s.end_date)}</span></td>
-              <td>${esc(s.phone || "—")}</td></tr>`).join("")}
+              <td>${waButton(s.whatsapp_phone, s.whatsapp_message)}</td></tr>`).join("")}
         </tbody></table>`}
+      </div>
+    </div>
+    <div class="grid-2" style="gap:18px">
+      <div class="card">
+        <h3 class="section-title">🎂 Anniversaires — 30 prochains jours</h3>
+        <div class="muted" style="margin-bottom:10px">Proposez un pack fête d'anniversaire</div>
+        ${d.birthdays.length === 0 ? '<div class="empty">Aucun anniversaire proche</div>' : `
+        <table class="data"><thead><tr><th>Enfant</th><th>Date</th><th>Proposer une fête</th></tr></thead>
+        <tbody>${d.birthdays.map((b) => `
+          <tr><td><b>${esc(b.child_name)}</b><br><span class="muted">${b.turning_age} ans</span></td>
+              <td>${fmtDate(b.next_birthday)}<br>
+                  <span class="badge ${b.days_until <= 7 ? "badge-purple" : "badge-gray"}">
+                    ${b.days_until === 0 ? "Aujourd'hui !" : "dans " + b.days_until + " j"}</span></td>
+              <td>${waButton(b.whatsapp_phone, b.whatsapp_message)}</td></tr>`).join("")}
+        </tbody></table>`}
+      </div>
+      <div class="card">
+        <h3 class="section-title">🧾 Caisse du jour par employé</h3>
+        ${d.cash_today.length === 0 ? '<div class="empty">Aucun encaissement aujourd\'hui</div>' : `
+        <table class="data"><thead><tr><th>Employé</th><th class="num">Opérations</th><th class="num">Total</th></tr></thead>
+        <tbody>${d.cash_today.map((c) => `
+          <tr><td><b>${esc(c.employee || "—")}</b></td>
+              <td class="num">${c.count}</td>
+              <td class="num"><b>${GNF(c.total)}</b></td></tr>`).join("")}
+        </tbody>
+        <tfoot><tr><td><b>TOTAL</b></td><td class="num"></td>
+          <td class="num"><b>${GNF(d.revenue.today)}</b></td></tr></tfoot></table>
+        <div class="muted mt">🎁 ${d.free_visits_month} visite(s) offerte(s) ce mois (fidélité)</div>
+        <button class="btn btn-ghost btn-sm mt" onclick="window.print()">🖨️ Imprimer le rapport</button>`}
       </div>
     </div>`;
 
@@ -899,6 +1046,28 @@ async function renderParametres() {
       <button class="btn btn-green" id="set-save">Enregistrer</button>
     </div>
     <div class="card" style="max-width:560px">
+      <h3 class="section-title">🎁 Carte de fidélité</h3>
+      <div class="field"><label>
+        <input type="checkbox" id="set-loyalty" ${s.loyalty_enabled === "1" ? "checked" : ""}>
+        Activer les visites offertes</label></div>
+      <div class="field"><label>Nombre de visites payantes avant une visite offerte</label>
+        <input id="set-threshold" type="number" min="2" max="100" value="${esc(s.loyalty_threshold || "10")}"></div>
+      <div class="muted">Exemple : 10 → la 11ᵉ visite est gratuite et n'entame pas le quota
+        d'entrées. Le compteur repart à zéro après chaque visite offerte.</div>
+      <button class="btn btn-green mt" id="set-save2">Enregistrer</button>
+    </div>
+    <div class="card" style="max-width:560px">
+      <h3 class="section-title">💬 Messages WhatsApp</h3>
+      <div class="field"><label>Relance abonnement qui expire</label>
+        <textarea id="set-wa-exp" rows="3">${esc(s.whatsapp_expiry_template || "")}</textarea></div>
+      <div class="field"><label>Proposition de fête d'anniversaire</label>
+        <textarea id="set-wa-bd" rows="3">${esc(s.whatsapp_birthday_template || "")}</textarea></div>
+      <div class="muted">Champs remplacés automatiquement :
+        <code>{parent}</code> <code>{enfant}</code> <code>{expiration}</code>
+        <code>{restantes}</code> <code>{abonnement}</code> <code>{date}</code> <code>{age}</code></div>
+      <button class="btn btn-green mt" id="set-save3">Enregistrer</button>
+    </div>
+    <div class="card" style="max-width:560px">
       <h3 class="section-title">🔌 Lecteur RFID (ACR122U)</h3>
       <div class="muted">Lancez le pont sur ce poste :<br>
         <code>python3 bridge/acr122u_bridge.py</code><br><br>
@@ -906,15 +1075,24 @@ async function renderParametres() {
         Les lecteurs « émulation clavier » fonctionnent aussi : cliquez simplement
         dans le champ de saisie de la page Accueil.</div>
     </div>`;
-  $("#set-save").addEventListener("click", async () => {
+  const saveSettings = async (body) => {
     try {
-      await api("/settings", { method: "POST", body: {
-        park_name: $("#set-name").value, park_address: $("#set-addr").value,
-        park_phone: $("#set-phone").value, receipt_footer: $("#set-footer").value,
-      } });
+      await api("/settings", { method: "POST", body });
       toast("Paramètres enregistrés ✓", "ok");
     } catch (err) { toast(err.message, "err"); }
-  });
+  };
+  $("#set-save").addEventListener("click", () => saveSettings({
+    park_name: $("#set-name").value, park_address: $("#set-addr").value,
+    park_phone: $("#set-phone").value, receipt_footer: $("#set-footer").value,
+  }));
+  $("#set-save2").addEventListener("click", () => saveSettings({
+    loyalty_enabled: $("#set-loyalty").checked ? "1" : "0",
+    loyalty_threshold: $("#set-threshold").value,
+  }));
+  $("#set-save3").addEventListener("click", () => saveSettings({
+    whatsapp_expiry_template: $("#set-wa-exp").value,
+    whatsapp_birthday_template: $("#set-wa-bd").value,
+  }));
 }
 
 /* ---------------------------------------------------------- démarrage */

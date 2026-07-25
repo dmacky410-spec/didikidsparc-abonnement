@@ -130,6 +130,19 @@ class Handler(BaseHTTPRequestHandler):
 
             result = api.handle(method, path, query, body, user, conn)
             conn.commit()
+
+            # Export CSV : téléchargement de fichier au lieu de JSON
+            if isinstance(result, dict) and "_csv" in result:
+                payload = ("﻿" + result["_csv"]).encode("utf-8")  # BOM pour Excel
+                self.send_response(200)
+                self.send_header("Content-Type", "text/csv; charset=utf-8")
+                self.send_header("Content-Disposition",
+                                 f'attachment; filename="{result["_filename"]}"')
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+
             self.send_json(200, result)
         except api.ApiError as e:
             conn.rollback()
