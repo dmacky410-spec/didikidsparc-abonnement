@@ -1,0 +1,10 @@
+# Rien de tout ceci n'a sa place dans l'image cloud
+data/
+dist/
+windows/
+bridge/
+.claude/
+.git/
+__pycache__/
+*.pyc
+.DS_Store
