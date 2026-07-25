@@ -113,15 +113,23 @@ function renderLogin() {
 
 /* ---------------------------------------------------------- structure */
 
+const ROLE_LABELS = {
+  superadmin: "Super administrateur",
+  admin: "Gérant",
+  agent: "Agent accueil",
+};
+const isAdmin = () => ["admin", "superadmin"].includes(state.user.role);
+const isSuper = () => state.user.role === "superadmin";
+
 const PAGES = [
-  { id: "accueil", icon: "🎟️", label: "Accueil / Entrées", roles: ["admin", "agent"] },
-  { id: "membres", icon: "🧒", label: "Membres", roles: ["admin", "agent"] },
-  { id: "abonnements", icon: "💳", label: "Abonnements", roles: ["admin"] },
-  { id: "paiements", icon: "💰", label: "Paiements", roles: ["admin"] },
-  { id: "visites", icon: "🕐", label: "Historique visites", roles: ["admin", "agent"] },
-  { id: "dashboard", icon: "📊", label: "Tableau de bord", roles: ["admin"] },
-  { id: "employes", icon: "👥", label: "Employés", roles: ["admin"] },
-  { id: "parametres", icon: "⚙️", label: "Paramètres", roles: ["admin"] },
+  { id: "accueil", icon: "🎟️", label: "Accueil / Entrées", roles: ["superadmin", "admin", "agent"] },
+  { id: "membres", icon: "🧒", label: "Membres", roles: ["superadmin", "admin", "agent"] },
+  { id: "abonnements", icon: "💳", label: "Abonnements", roles: ["superadmin"] },
+  { id: "paiements", icon: "💰", label: "Paiements", roles: ["superadmin", "admin"] },
+  { id: "visites", icon: "🕐", label: "Historique visites", roles: ["superadmin", "admin", "agent"] },
+  { id: "dashboard", icon: "📊", label: "Tableau de bord", roles: ["superadmin", "admin"] },
+  { id: "employes", icon: "👥", label: "Employés", roles: ["superadmin"] },
+  { id: "parametres", icon: "⚙️", label: "Paramètres", roles: ["superadmin"] },
 ];
 
 function go(page) {
@@ -144,7 +152,7 @@ function renderLayout() {
         </nav>
         <div class="user-box">
           <div class="name">${esc(state.user.full_name)}</div>
-          <div class="role">${state.user.role === "admin" ? "Administrateur" : "Agent accueil"}</div>
+          <div class="role">${ROLE_LABELS[state.user.role] || state.user.role}</div>
           <button class="btn btn-ghost btn-sm" id="logout-btn">Déconnexion</button>
         </div>
       </aside>
@@ -275,7 +283,7 @@ async function renderAccueil() {
 
 async function renderMembres() {
   const c = $("#page-content");
-  const isAdmin = state.user.role === "admin";
+  const isAdmin = ["admin", "superadmin"].includes(state.user.role);
   c.innerHTML = `
     <div class="page-head"><h2>🧒 Membres</h2>
       <div style="display:flex; gap:10px">
@@ -359,7 +367,7 @@ function memberForm(member, onSaved) {
 }
 
 async function openMember(id, onChange) {
-  const isAdmin = state.user.role === "admin";
+  const isAdmin = ["admin", "superadmin"].includes(state.user.role);
   let m = await api("/members/" + id).catch((e) => { toast(e.message, "err"); });
   if (!m) return;
 
@@ -492,7 +500,9 @@ async function sellSubscription(member, onSold) {
           <option value="carte">Carte bancaire</option>
         </select></div>
     </div>
-    <div class="field"><label>Montant payé (GNF)</label><input id="s-amount" type="number" min="0"></div>
+    <div class="field"><label>Montant payé (GNF)</label>
+      <input id="s-amount" type="number" min="0" ${isSuper() ? "" : "readonly"}>
+      ${isSuper() ? "" : '<div class="muted" style="font-size:12px; margin-top:4px">🔒 Prix catalogue — seul le super administrateur peut modifier le montant</div>'}</div>
     <div class="modal-actions">
       <button class="btn btn-ghost" id="s-cancel">Annuler</button>
       <button class="btn btn-green" id="s-save" disabled>Encaisser et imprimer le reçu</button>
@@ -664,7 +674,7 @@ async function renderPaiements() {
 
 async function renderVisites() {
   const c = $("#page-content");
-  const isAdmin = state.user.role === "admin";
+  const isAdmin = ["admin", "superadmin"].includes(state.user.role);
   c.innerHTML = `
     <div class="page-head"><h2>🕐 Historique des visites</h2></div>
     <div class="card">
@@ -817,7 +827,8 @@ async function renderEmployes() {
             <td>${esc(u.position || "—")}</td>
             <td>${esc(u.phone || "—")}</td>
             <td><code>${esc(u.username)}</code></td>
-            <td>${u.role === "admin" ? '<span class="badge badge-purple">Administrateur</span>'
+            <td>${u.role === "superadmin" ? '<span class="badge badge-purple">Super administrateur</span>'
+                 : u.role === "admin" ? '<span class="badge badge-yellow">Gérant</span>'
                  : '<span class="badge badge-green">Agent accueil</span>'}</td>
             <td>${u.active ? '<span class="badge badge-green">Actif</span>' : '<span class="badge badge-red">Désactivé</span>'}</td>
             <td><button class="btn btn-ghost btn-sm" data-edit="${u.id}">Modifier</button></td></tr>`).join("")}
@@ -839,8 +850,9 @@ function userForm(u, onSaved) {
       <div class="field"><label>Poste</label><input id="u-pos" value="${esc(v.position || "")}" placeholder="Agent accueil"></div>
       <div class="field"><label>Rôle *</label>
         <select id="u-role">
-          <option value="agent" ${v.role === "agent" ? "selected" : ""}>Agent accueil</option>
-          <option value="admin" ${v.role === "admin" ? "selected" : ""}>Administrateur</option>
+          <option value="agent" ${v.role === "agent" ? "selected" : ""}>Agent accueil — entrées uniquement</option>
+          <option value="admin" ${v.role === "admin" ? "selected" : ""}>Gérant — ventes au prix catalogue</option>
+          <option value="superadmin" ${v.role === "superadmin" ? "selected" : ""}>Super administrateur — accès total</option>
         </select></div>
       ${isNew ? `<div class="field"><label>Identifiant *</label><input id="u-user" autocomplete="off"></div>` : ""}
       <div class="field"><label>${isNew ? "Mot de passe *" : "Nouveau mot de passe (laisser vide pour garder)"}</label>

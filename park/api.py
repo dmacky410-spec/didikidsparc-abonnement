@@ -22,9 +22,22 @@ def require(body, *fields):
             raise ApiError(400, f"Champ requis : {f}")
 
 
+ROLE_LEVEL = {"agent": 1, "admin": 2, "superadmin": 3}
+
+
 def require_admin(user):
-    if user["role"] != "admin":
-        raise ApiError(403, "Réservé à l'administrateur")
+    """Gérant ou super administrateur."""
+    if ROLE_LEVEL.get(user["role"], 0) < ROLE_LEVEL["admin"]:
+        raise ApiError(403, "Réservé au gérant ou au super administrateur")
+
+
+def require_super(user):
+    if user["role"] != "superadmin":
+        raise ApiError(403, "Réservé au super administrateur")
+
+
+def is_admin(user):
+    return ROLE_LEVEL.get(user["role"], 0) >= ROLE_LEVEL["admin"]
 
 
 def normalize_uid(uid):
@@ -163,7 +176,12 @@ def sell_subscription(conn, body, user):
     except ValueError:
         raise ApiError(400, "Date de début invalide (AAAA-MM-JJ)")
 
-    amount = int(body.get("amount", t["price"]))
+    # Anti-fraude : seul le super administrateur peut modifier le montant.
+    # Les autres encaissent au prix catalogue, point final.
+    if user["role"] == "superadmin":
+        amount = int(body.get("amount", t["price"]))
+    else:
+        amount = t["price"]
     cur = conn.execute(
         """INSERT INTO subscriptions
            (member_id, type_id, start_date, end_date, entries_total, entries_left, status, created_at, created_by)
@@ -335,7 +353,7 @@ def list_visits(conn, query, user):
              LEFT JOIN employees e ON e.id = u.employee_id WHERE 1=1"""
     params = []
     # L'agent d'accueil ne voit que les visites du jour
-    if user["role"] != "admin":
+    if not is_admin(user):
         sql += " AND v.visited_at LIKE ?"
         params.append(today() + "%")
     else:
@@ -458,14 +476,15 @@ def list_users(conn):
 
 def create_user(conn, body):
     require(body, "username", "password", "full_name", "role")
-    if body["role"] not in ("admin", "agent"):
+    if body["role"] not in ("superadmin", "admin", "agent"):
         raise ApiError(400, "Rôle invalide")
     if conn.execute("SELECT 1 FROM users WHERE username=?", (body["username"].strip(),)).fetchone():
         raise ApiError(409, "Ce nom d'utilisateur existe déjà")
     cur = conn.execute(
         "INSERT INTO employees (full_name, phone, position, hired_at) VALUES (?,?,?,?)",
         (body["full_name"].strip(), (body.get("phone") or "").strip(),
-         body.get("position") or ("Administrateur" if body["role"] == "admin" else "Agent accueil"),
+         body.get("position") or {"superadmin": "Super administrateur",
+                                  "admin": "Gérant"}.get(body["role"], "Agent accueil"),
          today()))
     conn.execute(
         "INSERT INTO users (username, password_hash, role, employee_id, created_at) VALUES (?,?,?,?,?)",
@@ -482,11 +501,21 @@ def update_user(conn, user_id, body, current_user):
         conn.execute("UPDATE employees SET full_name=?, phone=?, position=? WHERE id=?",
                      (body.get("full_name", "").strip(), (body.get("phone") or "").strip(),
                       body.get("position") or "", u["employee_id"]))
-    if body.get("role") in ("admin", "agent"):
+    def other_superadmin_exists():
+        return conn.execute(
+            "SELECT 1 FROM users WHERE role='superadmin' AND active=1 AND id != ?",
+            (user_id,)).fetchone() is not None
+
+    if body.get("role") in ("superadmin", "admin", "agent"):
+        if (u["role"] == "superadmin" and body["role"] != "superadmin"
+                and not other_superadmin_exists()):
+            raise ApiError(400, "Impossible : il doit rester au moins un super administrateur")
         conn.execute("UPDATE users SET role=? WHERE id=?", (body["role"], user_id))
     if "active" in body:
         if user_id == current_user["id"] and not body["active"]:
             raise ApiError(400, "Impossible de désactiver votre propre compte")
+        if u["role"] == "superadmin" and not body["active"] and not other_superadmin_exists():
+            raise ApiError(400, "Impossible : il doit rester au moins un super administrateur")
         conn.execute("UPDATE users SET active=? WHERE id=?",
                      (1 if body["active"] else 0, user_id))
         if not body["active"]:
@@ -575,16 +604,17 @@ def handle(method, path, query, body, user, conn):
             return assign_card(conn, body, user)
 
     if route == "subscriptions":
-        require_admin(user)
         if method == "POST" and arg and sub == "cancel":
+            require_super(user)
             return cancel_subscription(conn, int(arg))
         if method == "POST":
+            require_admin(user)
             return sell_subscription(conn, body, user)
 
     if route == "types":
         if method == "GET":
-            return list_types(conn, include_inactive=(user["role"] == "admin"))
-        require_admin(user)
+            return list_types(conn, include_inactive=is_admin(user))
+        require_super(user)
         if method == "POST" and arg:
             return save_type(conn, body, int(arg))
         if method == "POST":
@@ -602,7 +632,7 @@ def handle(method, path, query, body, user, conn):
         return dashboard(conn)
 
     if route == "users":
-        require_admin(user)
+        require_super(user)
         if method == "GET":
             return list_users(conn)
         if method == "POST" and arg:
@@ -613,7 +643,7 @@ def handle(method, path, query, body, user, conn):
     if route == "settings":
         if method == "GET":
             return get_settings(conn)
-        require_admin(user)
+        require_super(user)
         if method == "POST":
             return save_settings(conn, body)
 

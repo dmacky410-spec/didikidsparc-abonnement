@@ -4,7 +4,8 @@ import sqlite3
 import secrets
 from datetime import datetime
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+DATA_DIR = os.environ.get("DIDIKIDS_DATA_DIR") or os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 DB_PATH = os.path.join(DATA_DIR, "didikidsparc.db")
 
 SCHEMA = """
@@ -23,7 +24,7 @@ CREATE TABLE IF NOT EXISTS users (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   username      TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
-  role          TEXT NOT NULL CHECK (role IN ('admin','agent')),
+  role          TEXT NOT NULL CHECK (role IN ('superadmin','admin','agent')),
   employee_id   INTEGER REFERENCES employees(id),
   active        INTEGER NOT NULL DEFAULT 1,
   created_at    TEXT NOT NULL
@@ -145,11 +146,41 @@ def connect():
     return conn
 
 
+def _migrate_roles(conn):
+    """Anciennes bases : ajoute le rôle 'superadmin' (contrainte CHECK à reconstruire)."""
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").fetchone()
+    if not row or "superadmin" in row[0]:
+        return
+    conn.executescript("""
+        PRAGMA foreign_keys=OFF;
+        CREATE TABLE users_new (
+          id            INTEGER PRIMARY KEY AUTOINCREMENT,
+          username      TEXT NOT NULL UNIQUE,
+          password_hash TEXT NOT NULL,
+          role          TEXT NOT NULL CHECK (role IN ('superadmin','admin','agent')),
+          employee_id   INTEGER REFERENCES employees(id),
+          active        INTEGER NOT NULL DEFAULT 1,
+          created_at    TEXT NOT NULL
+        );
+        INSERT INTO users_new SELECT * FROM users;
+        DROP TABLE users;
+        ALTER TABLE users_new RENAME TO users;
+        PRAGMA foreign_keys=ON;
+    """)
+    # Le premier administrateur devient super administrateur
+    first_admin = conn.execute(
+        "SELECT id FROM users WHERE role='admin' AND active=1 ORDER BY id LIMIT 1").fetchone()
+    if first_admin and not conn.execute(
+            "SELECT 1 FROM users WHERE role='superadmin'").fetchone():
+        conn.execute("UPDATE users SET role='superadmin' WHERE id=?", (first_admin[0],))
+
+
 def init():
     os.makedirs(DATA_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA journal_mode = WAL")
     conn.executescript(SCHEMA)
+    _migrate_roles(conn)
 
     # Types d'abonnements par défaut
     if conn.execute("SELECT COUNT(*) FROM subscription_types").fetchone()[0] == 0:
@@ -179,7 +210,7 @@ def init():
         emp_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         conn.execute(
             "INSERT INTO users (username, password_hash, role, employee_id, created_at) VALUES (?,?,?,?,?)",
-            ("admin", hash_password("admin123"), "admin", emp_id, now_iso()),
+            ("admin", hash_password("admin123"), "superadmin", emp_id, now_iso()),
         )
 
     conn.commit()
