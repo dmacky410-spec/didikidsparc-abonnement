@@ -82,8 +82,8 @@ en temps réel — l'écran d'accueil valide l'entrée automatiquement.
 | Rôle | Accès |
 |---|---|
 | **Super administrateur** | Tout, plus ce que personne d'autre ne peut faire : prix et types d'abonnements, modification d'un montant encaissé, annulation d'abonnement, comptes employés, paramètres, exports Excel |
-| **Gérant** | Tout ce que fait l'agent, plus le tableau de bord et les statistiques |
-| **Agent accueil** | Entrées, inscription et modification des membres, attribution et remplacement des cartes, ventes **au prix catalogue**, consultation des paiements et réimpression des reçus, relances WhatsApp — mais ni statistiques, ni exports, ni réglages |
+| **Gérant** | Tout ce que fait l'agent, plus les paiements du parc, le tableau de bord et les statistiques |
+| **Agent accueil** | Parcours client complet en autonomie : entrées, inscription et modification des membres, attribution et remplacement des cartes, encaissement **au prix catalogue** avec impression du reçu, relances WhatsApp. Il ne voit **ni le chiffre d'affaires, ni les statistiques, ni les reçus encaissés par d'autres**, ni les réglages |
 
 Chaque vente et chaque entrée enregistre le nom de l'employé qui l'a faite.
 

@@ -937,10 +937,14 @@ def handle(method, path, query, body, user, conn):
             return save_type(conn, body)
 
     if route == "payments":
+        require_admin(user)
         return list_payments(conn, query)
 
     if route == "receipts" and arg:
-        return get_receipt(conn, arg)
+        receipt = get_receipt(conn, arg)
+        if not is_admin(user) and receipt.get("user_id") != user["id"]:
+            raise ApiError(403, "Ce reçu a été encaissé par un autre employé")
+        return receipt
 
     if route == "dashboard":
         require_admin(user)

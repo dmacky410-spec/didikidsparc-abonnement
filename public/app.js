@@ -140,7 +140,7 @@ const PAGES = [
   { id: "accueil", icon: "🎟️", label: "Accueil / Entrées", roles: ["superadmin", "admin", "agent"] },
   { id: "membres", icon: "🧒", label: "Membres", roles: ["superadmin", "admin", "agent"] },
   { id: "abonnements", icon: "💳", label: "Abonnements", roles: ["superadmin"] },
-  { id: "paiements", icon: "💰", label: "Paiements", roles: ["superadmin", "admin", "agent"] },
+  { id: "paiements", icon: "💰", label: "Paiements", roles: ["superadmin", "admin"] },
   { id: "relances", icon: "💬", label: "Relances WhatsApp", roles: ["superadmin", "admin", "agent"] },
   { id: "visites", icon: "🕐", label: "Historique visites", roles: ["superadmin", "admin", "agent"] },
   { id: "dashboard", icon: "📊", label: "Tableau de bord", roles: ["superadmin", "admin"] },
