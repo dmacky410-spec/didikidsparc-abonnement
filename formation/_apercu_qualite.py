@@ -7,7 +7,7 @@ from pptx.enum.text import PP_ALIGN
 
 EMU = 914400.0
 PX = 96.0
-prs = Presentation("formation/Didikids_Parc_Formation_Employes.pptx")
+prs = Presentation("formation/Didikids_Parc_Guide_Agent.pptx")
 SW = prs.slide_width / EMU * PX
 SH = prs.slide_height / EMU * PX
 
