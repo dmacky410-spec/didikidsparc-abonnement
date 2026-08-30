@@ -154,6 +154,41 @@ def build():
     def notes(s, t):
         s.notes_slide.notes_text_frame.text = t
 
+    # ---------------------------------------- images : captures réelles du logiciel
+    from PIL import Image as _PILImage
+    CAPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "captures")
+
+    def capture(s, fichier, x, y, max_w, max_h, ombre=True):
+        """Place une capture en respectant ses proportions. Retourne (x, y, w, h)."""
+        chemin = os.path.join(CAPT, fichier)
+        with _PILImage.open(chemin) as im:
+            iw, ih = im.size
+        ratio = iw / ih
+        w, h = max_w, max_w / ratio
+        if h > max_h:
+            h, w = max_h, max_h * ratio
+        px = x + (max_w - w) / 2
+        py = y + (max_h - h) / 2
+        if ombre:
+            box(s, px + 0.04, py + 0.05, w, h, fill=RGBColor(0xE6, 0xEE, 0xE7), radius=0.02)
+        pic = s.shapes.add_picture(chemin, Inches(px), Inches(py), Inches(w), Inches(h))
+        return px, py, w, h
+
+    def repere(s, rect, fx, fy, n, d=0.42):
+        """Pastille numérotée posée sur la capture (position en fraction de l'image)."""
+        px, py, w, h = rect
+        pastille(s, px + fx * w - d / 2, py + fy * h - d / 2, d, YELLOW, str(n),
+                 lc=TEXT, size=14)
+
+    def liste_reperes(s, x, y, items, gap=0.92, wt=4.0):
+        for i, (titre, desc) in enumerate(items, 1):
+            pastille(s, x, y, 0.42, YELLOW, str(i), lc=TEXT, size=14)
+            text(s, x + 0.6, y - 0.02, wt, 0.3, titre, size=14.5, bold=True)
+            if desc:
+                text(s, x + 0.6, y + 0.32, wt, 0.5, desc, size=12, color=MUTED, line=1.15)
+            y += gap
+        return y
+
     # --------------------------------------------- maquette : fenêtre du logiciel
     def fenetre(s, x, y, w, h, page_active="Accueil / Entrées"):
         box(s, x, y, w, h, fill=WHITE, outline=BORDER, radius=0.04, lw=1.25)
@@ -227,46 +262,27 @@ def build():
         ("3", "L'écran d'accueil s'ouvre",
          "Vous êtes prêt à recevoir les enfants."),
     ]:
-        etape(s, 0.85, y, n, t, d, wt=6.2)
+        etape(s, 0.85, y, n, t, d, wt=5.3)
         y += 1.4
-    box(s, 8.05, 2.3, 4.5, 3.85, fill=YELLOW_PALE, outline=YELLOW, lw=2.25)
-    text(s, 8.45, 2.7, 3.7, 0.4, "RÈGLE IMPORTANTE", size=15, bold=True)
-    text(s, 8.45, 3.3, 3.7, 2.5,
+    capture(s, "10_connexion.png", 6.55, 2.2, 2.7, 4.3)
+    box(s, 9.55, 2.3, 3.0, 3.85, fill=YELLOW_PALE, outline=YELLOW, lw=2.25)
+    text(s, 9.85, 2.7, 2.4, 0.4, "RÈGLE IMPORTANTE", size=14, bold=True)
+    text(s, 9.85, 3.3, 2.4, 2.5,
          "Ne prêtez votre compte à personne, même à un collègue, même cinq minutes.\n\n"
          "Chaque entrée validée et chaque encaissement portent votre nom.\n\n"
-         "C'est votre protection : personne ne pourra vous reprocher l'erreur "
-         "d'un autre.",
-         size=14, line=1.3)
+         "C'est votre protection : personne ne pourra vous reprocher "
+         "l'erreur d'un autre.",
+         size=12.5, line=1.3)
     notes(s, "Insister sur le compte personnel des le debut.")
 
     # ============================================================== 4. écran d'accueil
     s = slide()
     entete(s, "L'écran d'accueil", "Voici l'écran devant lequel vous passerez la journée")
-    cx = fenetre(s, 0.75, 2.05, 7.6, 4.5)
-    text(s, cx + 0.25, 2.28, 3.0, 0.3, "Contrôle des entrées", size=15,
-         bold=True, color=GREEN_DARK, space=0)
-    box(s, cx + 0.25, 2.75, 5.3, 2.05, fill=WHITE, outline=BORDER, radius=0.1)
-    text(s, cx + 0.35, 3.05, 5.1, 0.3, "Présentez la carte", size=15,
-         bold=True, color=GREEN_DARK, align=PP_ALIGN.CENTER, space=0)
-    text(s, cx + 0.35, 3.45, 5.1, 0.3,
-         "Le passage est validé automatiquement", size=10.5, color=MUTED,
-         align=PP_ALIGN.CENTER, space=0)
-    b = box(s, cx + 0.9, 3.9, 4.0, 0.55, fill=GREEN_PALE, outline=GREEN_MAIN,
-            dashed=True, radius=0.2, lw=2)
-    text(s, cx + 0.9, 4.05, 4.0, 0.3, "ou saisir l'UID ici", size=12,
-         bold=True, color=GREEN_DARK, align=PP_ALIGN.CENTER, space=0)
-    box(s, cx + 0.25, 5.0, 5.3, 1.3, fill=GREY, radius=0.1)
-    text(s, cx + 0.45, 5.2, 4.9, 0.25, "Passages du jour", size=12, bold=True,
-         color=GREEN_DARK, space=0)
-    ly = 5.6
-    for heure, nom, ok in [("14:32", "Aminata Diallo", True),
-                           ("14:05", "Sekou Conde", True)]:
-        text(s, cx + 0.45, ly, 0.7, 0.22, heure, size=10, color=TEXT, space=0)
-        text(s, cx + 1.25, ly, 2.4, 0.22, nom, size=10, bold=True, color=TEXT, space=0)
-        box(s, cx + 4.2, ly - 0.03, 0.55, 0.26, fill=GREEN_PALE, radius=0.4)
-        text(s, cx + 4.2, ly + 0.02, 0.55, 0.2, "OK", size=8.5, bold=True,
-             color=GREEN_DARK, align=PP_ALIGN.CENTER, space=0)
-        ly += 0.35
+    r = capture(s, "01_accueil.png", 0.75, 2.05, 8.0, 4.6)
+    repere(s, r, 0.09, 0.125, 1)
+    repere(s, r, 0.44, 0.38, 2)
+    repere(s, r, 0.80, 0.155, 3)
+
     y = 2.3
     for n, t, d in [
         ("1", "Le menu à gauche", "Vos quatre pages. Si un menu manque, c'est normal : "
@@ -275,7 +291,7 @@ def build():
          "posez la carte."),
         ("3", "Les passages du jour", "Qui est entré, à quelle heure."),
     ]:
-        etape(s, 8.65, y, n, t, d, wt=3.9)
+        etape(s, 9.05, y, n, t, d, wt=3.5)
         y += 1.4
     notes(s, "Montrer le vrai ecran en parallele si possible.")
 
@@ -303,34 +319,25 @@ def build():
     s = slide()
     entete(s, "L'écran vert : l'enfant peut entrer",
            "Quatre informations à lire avant de le laisser passer")
-    box(s, 0.75, 2.2, 5.6, 4.4, fill=GREEN_PALE, outline=GREEN_MAIN, lw=2.25)
-    text(s, 1.05, 2.6, 5.0, 0.55, "ENTRÉE AUTORISÉE", size=26, bold=True,
-         color=GREEN_DARK, align=PP_ALIGN.CENTER)
-    text(s, 1.05, 3.35, 5.0, 0.45, "Aminata Diallo", size=21, bold=True,
-         align=PP_ALIGN.CENTER)
-    text(s, 1.05, 3.88, 5.0, 0.35, "M-0001 · Mensuel 4 entrées", size=14,
-         color=MUTED, align=PP_ALIGN.CENTER)
-    bx = 1.15
-    for v, l in [("3", "ENTRÉES\nRESTANTES"), ("23/09", "EXPIRE LE"),
-                 ("7", "AVANT VISITE\nOFFERTE")]:
-        box(s, bx, 4.5, 1.55, 1.6, fill=WHITE)
-        text(s, bx + 0.1, 4.72, 1.35, 0.5, v, size=23, bold=True,
-             color=GREEN_DARK, align=PP_ALIGN.CENTER)
-        text(s, bx + 0.1, 5.35, 1.35, 0.65, l, size=9.5, bold=True, color=MUTED,
-             align=PP_ALIGN.CENTER, space=0, line=1.1)
-        bx += 1.7
+    r = capture(s, "02_entree_autorisee.png", 0.75, 2.1, 6.0, 4.3)
+    repere(s, r, 0.50, 0.262, 1)
+    repere(s, r, 0.80, 0.335, 2)
+    repere(s, r, 0.372, 0.457, 3)
+    repere(s, r, 0.683, 0.457, 4)
+
     y = 2.3
-    for t, d in [("Le nom", "Vérifiez que c'est bien l'enfant devant vous."),
-                 ("L'abonnement", "Le forfait dont il dispose."),
-                 ("Les entrées restantes", "S'il n'en reste qu'une, prévenez le parent."),
-                 ("La date d'expiration", "Si la date approche, proposez le renouvellement.")]:
-        pastille(s, 6.8, y, 0.38, GREEN_MAIN, "•", size=17)
-        text(s, 7.4, y - 0.02, 5.15, 0.36, t, size=16.5, bold=True)
-        text(s, 7.4, y + 0.4, 5.15, 0.5, d, size=13.5, color=MUTED, line=1.2)
+    for num, (t, d) in enumerate([
+            ("Le nom", "Vérifiez que c'est bien l'enfant devant vous."),
+            ("L'abonnement", "Le forfait dont il dispose."),
+            ("Les entrées restantes", "S'il n'en reste qu'une, prévenez le parent."),
+            ("La date d'expiration", "Si la date approche, proposez le renouvellement.")], 1):
+        pastille(s, 7.05, y, 0.42, YELLOW, str(num), lc=TEXT, size=14)
+        text(s, 7.65, y - 0.02, 4.9, 0.36, t, size=16, bold=True)
+        text(s, 7.65, y + 0.4, 4.9, 0.5, d, size=13, color=MUTED, line=1.2)
         y += 1.05
-    box(s, 6.8, 6.0, 5.75, 0.72, fill=YELLOW_PALE)
-    text(s, 7.05, 6.22, 5.3, 0.4,
-         "« Déjà passé 2 fois aujourd'hui » : vérifiez que ce n'est pas une erreur",
+    box(s, 7.05, 6.0, 5.5, 0.72, fill=YELLOW_PALE)
+    text(s, 7.3, 6.22, 5.0, 0.4,
+         "« Déjà passé 2 fois » : vérifiez que ce n'est pas une erreur",
          size=12.5, bold=True)
     notes(s, "Le compteur 'avant visite offerte' n'apparait que si la fidelite est activee.")
 
@@ -338,9 +345,10 @@ def build():
     s = slide()
     entete(s, "L'écran rouge : l'enfant ne peut pas entrer",
            "Le motif est toujours écrit — lisez-le au parent, il comprendra")
+    capture(s, "03_entree_refusee.png", 8.6, 1.95, 4.0, 1.5)
     text(s, 0.9, 2.2, 3.9, 0.3, "CE QUI S'AFFICHE", size=12, bold=True, color=MUTED)
-    text(s, 5.0, 2.2, 3.3, 0.3, "CE QUE ÇA VEUT DIRE", size=12, bold=True, color=MUTED)
-    text(s, 8.6, 2.2, 3.9, 0.3, "CE QUE VOUS FAITES", size=12, bold=True, color=MUTED)
+    text(s, 4.6, 2.2, 3.3, 0.3, "CE QUE ÇA VEUT DIRE", size=12, bold=True, color=MUTED)
+    text(s, 8.6, 3.62, 3.9, 0.3, "CE QUE VOUS FAITES", size=12, bold=True, color=MUTED)
     y = 2.68
     lignes = [
         ("Carte inconnue", "Elle n'est enregistrée sur aucun enfant",
@@ -354,12 +362,21 @@ def build():
         ("Aucun abonnement actif", "L'enfant n'a rien en cours",
          "Vendez un abonnement depuis sa fiche"),
     ]
+    reste = []
     for i, (msg, sens, act) in enumerate(lignes):
-        box(s, 0.75, y, 11.8, 0.74, fill=RED_PALE if i % 2 == 0 else WHITE)
-        text(s, 0.9, y + 0.22, 3.95, 0.4, msg, size=13.5, bold=True, color=RED)
-        text(s, 5.0, y + 0.22, 3.45, 0.4, sens, size=13)
-        text(s, 8.6, y + 0.22, 3.85, 0.4, act, size=13, bold=True, color=GREEN_DARK)
+        large = 11.8 if y > 3.55 else 7.6
+        box(s, 0.75, y, large, 0.74, fill=RED_PALE if i % 2 == 0 else WHITE)
+        text(s, 0.9, y + 0.22, 3.55, 0.4, msg, size=13, bold=True, color=RED)
+        text(s, 4.6, y + 0.22, 3.0, 0.4, sens, size=12.5)
+        if y > 3.55:
+            text(s, 8.6, y + 0.22, 3.85, 0.4, act, size=12.5, bold=True, color=GREEN_DARK)
+        else:
+            reste.append((msg, act))
         y += 0.82
+    for j, (msg, act) in enumerate(reste):
+        text(s, 8.6, 3.98 + j * 0.55, 3.9, 0.45,
+             [[(msg + " : ", {"size": 11.5, "color": RED, "bold": True}),
+               (act, {"size": 11.5, "color": GREEN_DARK, "bold": True})]], line=1.15)
     text(s, 0.75, y + 0.28, 11.8, 0.45,
          "Ne laissez jamais entrer un enfant refusé sans prévenir le responsable.",
          size=15.5, bold=True)
@@ -415,15 +432,12 @@ def build():
     s = slide()
     entete(s, "Étape 1 — Créer la fiche",
            "Menu « Membres » puis le bouton jaune « + Nouveau membre »")
-    box(s, 0.75, 2.05, 7.0, 4.5, fill=WHITE, outline=BORDER, radius=0.05, lw=1.5)
-    text(s, 1.05, 2.3, 4.0, 0.35, "Nouveau membre", size=17, bold=True, color=GREEN_DARK)
-    champ(s, 1.05, 2.85, 3.1, "NOM DE L'ENFANT *", "Fatoumata Barry")
-    champ(s, 4.45, 2.85, 3.0, "DATE DE NAISSANCE", "14/03/2020")
-    champ(s, 1.05, 3.75, 3.1, "NOM DU PARENT", "Alpha Barry")
-    champ(s, 4.45, 3.75, 3.0, "TÉLÉPHONE", "628 44 55 66")
-    champ(s, 1.05, 4.65, 6.4, "NOTES", "")
-    bouton(s, 5.05, 5.75, 1.1, 0.4, "Annuler", fill=GREEN_PALE, lc=GREEN_DARK)
-    bouton(s, 6.3, 5.75, 1.15, 0.4, "Enregistrer")
+    r = capture(s, "05_nouveau_membre.png", 0.75, 2.05, 6.6, 4.6)
+    repere(s, r, 0.28, 0.243, 1)
+    repere(s, r, 0.72, 0.244, 2)
+    repere(s, r, 0.72, 0.404, 3)
+    repere(s, r, 0.82, 0.879, 4)
+
     y = 2.25
     for n, t, d in [
         ("1", "Le nom de l'enfant suffit", "C'est le seul champ obligatoire."),
@@ -433,7 +447,7 @@ def build():
          "Ne le sautez jamais."),
         ("4", "Enregistrer", "La fiche s'ouvre aussitôt : vous enchaînez sur la carte."),
     ]:
-        etape(s, 8.15, y, n, t, d, couleur=YELLOW, lc=TEXT, wt=3.9)
+        etape(s, 7.8, y, n, t, d, couleur=YELLOW, lc=TEXT, wt=4.6)
         y += 1.12
     notes(s, "Le code membre (M-0005) est attribue automatiquement.")
 
@@ -441,20 +455,11 @@ def build():
     s = slide()
     entete(s, "Étape 2 — Lui donner une carte",
            "Sur la fiche qui vient de s'ouvrir : « + Attribuer une carte »")
-    box(s, 0.75, 2.05, 7.0, 4.0, fill=WHITE, outline=BORDER, radius=0.05, lw=1.5)
-    text(s, 1.05, 2.35, 5.0, 0.35, "Attribuer une carte RFID", size=17,
-         bold=True, color=GREEN_DARK)
-    text(s, 1.05, 2.8, 6.0, 0.3,
-         "Passez la carte sur le lecteur — le numéro se remplit tout seul.",
-         size=12, color=MUTED)
-    text(s, 1.05, 3.3, 3.0, 0.2, "NUMÉRO DE LA CARTE *", size=9.5, bold=True, color=MUTED)
-    box(s, 1.05, 3.55, 6.4, 0.72, fill=GREEN_PALE, outline=GREEN_MAIN,
-        dashed=True, radius=0.15, lw=2.25)
-    text(s, 1.05, 3.78, 6.4, 0.3, "En attente de la carte…", size=15, bold=True,
-         color=GREEN_DARK, align=PP_ALIGN.CENTER)
-    champ(s, 1.05, 4.5, 6.4, "NUMÉRO IMPRIMÉ SUR LA CARTE (FACULTATIF)", "042")
-    bouton(s, 5.05, 5.45, 1.1, 0.4, "Annuler", fill=GREEN_PALE, lc=GREEN_DARK)
-    bouton(s, 6.3, 5.45, 1.15, 0.4, "Attribuer")
+    r = capture(s, "11_attribuer_carte.png", 0.75, 2.15, 6.6, 4.0)
+    repere(s, r, 0.5, 0.455, 1)
+    repere(s, r, 0.5, 0.685, 2)
+    repere(s, r, 0.835, 0.845, 3)
+
     y = 2.25
     for n, t, d in [
         ("1", "Posez la carte neuve sur le lecteur",
@@ -464,10 +469,10 @@ def build():
         ("3", "Cliquez sur « Attribuer »",
          "La carte est active immédiatement."),
     ]:
-        etape(s, 8.15, y, n, t, d, wt=3.9)
+        etape(s, 7.8, y, n, t, d, wt=4.6)
         y += 1.35
-    box(s, 8.15, 6.05, 4.4, 0.75, fill=GREEN_PALE)
-    text(s, 8.4, 6.25, 3.9, 0.4, "Un enfant = une seule carte active",
+    box(s, 7.8, 6.05, 4.75, 0.75, fill=GREEN_PALE)
+    text(s, 8.05, 6.25, 4.25, 0.4, "Un enfant = une seule carte active",
          size=13, bold=True, color=GREEN_DARK)
     notes(s, "Si le logiciel refuse : l'enfant a deja une carte, utiliser 'Carte perdue'.")
 
@@ -475,28 +480,12 @@ def build():
     s = slide()
     entete(s, "Étape 3 — Encaisser",
            "Sur la fiche : bouton jaune « Vendre un abonnement »")
-    box(s, 0.75, 2.05, 7.0, 4.4, fill=WHITE, outline=BORDER, radius=0.05, lw=1.5)
-    text(s, 1.05, 2.3, 5.5, 0.35, "Vendre un abonnement", size=17, bold=True,
-         color=GREEN_DARK)
-    fx = 1.05
-    for nom, prix, sel in [("Mensuel 4", "180 000", False),
-                           ("Mensuel 8", "320 000", True),
-                           ("VIP Illimité", "500 000", False)]:
-        box(s, fx, 2.8, 2.05, 1.0,
-            fill=GREEN_PALE if sel else WHITE,
-            outline=GREEN_MAIN if sel else BORDER, lw=2.25 if sel else 1.25)
-        text(s, fx + 0.1, 3.0, 1.85, 0.25, nom, size=11.5, bold=True,
-             color=GREEN_DARK, align=PP_ALIGN.CENTER, space=0)
-        text(s, fx + 0.1, 3.35, 1.85, 0.25, prix + " GNF", size=12, bold=True,
-             align=PP_ALIGN.CENTER, space=0)
-        fx += 2.2
-    champ(s, 1.05, 4.05, 3.1, "MODE DE PAIEMENT", "Orange Money")
-    champ(s, 4.45, 4.05, 3.0, "MONTANT PAYÉ (GNF)", "320 000", vc=MUTED)
-    box(s, 4.45, 4.95, 3.0, 0.42, fill=YELLOW_PALE, radius=0.2)
-    text(s, 4.6, 5.06, 2.75, 0.25, "Prix du catalogue — non modifiable",
-         size=9.5, bold=True, space=0)
-    bouton(s, 4.15, 5.65, 3.3, 0.45, "Encaisser et imprimer le reçu",
-           fill=GREEN_DARK, size=12)
+    r = capture(s, "07_vendre_abonnement.png", 0.75, 2.05, 6.6, 4.6)
+    repere(s, r, 0.80, 0.232, 1)
+    repere(s, r, 0.73, 0.652, 2)
+    repere(s, r, 0.32, 0.841, 3)
+    repere(s, r, 0.79, 0.916, 4)
+
     y = 2.25
     for n, t, d in [
         ("1", "Choisissez la formule", "Elle se met en vert quand elle est sélectionnée."),
@@ -505,7 +494,7 @@ def build():
          "du parc. Cela vous protège."),
         ("4", "Encaissez", "Le reçu s'imprime tout seul, avec votre nom dessus."),
     ]:
-        etape(s, 8.15, y, n, t, d, couleur=YELLOW, lc=TEXT, wt=3.9)
+        etape(s, 7.8, y, n, t, d, couleur=YELLOW, lc=TEXT, wt=4.6)
         y += 1.12
     notes(s, "Rappeler : le montant bloque protege l'employe autant que le parc.")
 
@@ -513,18 +502,7 @@ def build():
     s = slide()
     entete(s, "Étape 4 — L'enfant entre",
            "Il pose sa carte tout de suite : c'est déjà actif")
-    box(s, 0.75, 2.2, 6.2, 4.4, fill=GREEN_PALE, outline=GREEN_MAIN, lw=2.25)
-    text(s, 1.05, 2.85, 5.6, 0.6, "ENTRÉE AUTORISÉE", size=29, bold=True,
-         color=GREEN_DARK, align=PP_ALIGN.CENTER)
-    text(s, 1.05, 3.75, 5.6, 0.5, "Fatoumata Barry", size=24, bold=True,
-         align=PP_ALIGN.CENTER)
-    text(s, 1.05, 4.38, 5.6, 0.35, "M-0005 · Mensuel 8 entrées", size=15,
-         color=MUTED, align=PP_ALIGN.CENTER)
-    box(s, 2.45, 4.95, 2.8, 1.3, fill=WHITE)
-    text(s, 2.55, 5.15, 2.6, 0.55, "7", size=30, bold=True, color=GREEN_DARK,
-         align=PP_ALIGN.CENTER)
-    text(s, 2.55, 5.8, 2.6, 0.28, "ENTRÉES RESTANTES", size=10.5, bold=True,
-         color=MUTED, align=PP_ALIGN.CENTER, space=0)
+    capture(s, "02_entree_autorisee.png", 0.75, 2.2, 6.2, 4.3)
     text(s, 7.35, 2.4, 5.2, 0.55, "C'est terminé.", size=32, bold=True, color=GREEN_DARK)
     text(s, 7.35, 3.35, 5.2, 3.2,
          "Le parent est inscrit, il a payé, son enfant joue.\n\n"
@@ -546,17 +524,11 @@ def build():
     text(s, 1.15, 2.7, 11.0, 0.3,
          "Vous perdriez son abonnement, ses entrées restantes et son historique.",
          size=13.5)
-    box(s, 0.75, 3.35, 7.0, 3.15, fill=WHITE, outline=BORDER, radius=0.05, lw=1.5)
-    text(s, 1.05, 3.6, 5.5, 0.35, "Carte perdue — la remplacer", size=16,
-         bold=True, color=RED)
-    text(s, 1.05, 4.02, 6.2, 0.3,
-         "L'ancienne carte sera désactivée automatiquement.", size=11.5, color=MUTED)
-    box(s, 1.05, 4.45, 6.4, 0.62, fill=GREEN_PALE, outline=GREEN_MAIN,
-        dashed=True, radius=0.15, lw=2.25)
-    text(s, 1.05, 4.62, 6.4, 0.3, "Posez la NOUVELLE carte…", size=14, bold=True,
-         color=GREEN_DARK, align=PP_ALIGN.CENTER)
-    champ(s, 1.05, 5.25, 3.1, "MOTIF", "Carte perdue")
-    bouton(s, 5.35, 5.65, 2.1, 0.42, "Remplacer la carte", fill=RED)
+    r1 = capture(s, "06_fiche_membre.png", 0.75, 3.3, 4.5, 3.2)
+    repere(s, r1, 0.80, 0.51, 1)
+    r2 = capture(s, "08_carte_perdue.png", 5.5, 3.3, 3.0, 3.2)
+    repere(s, r2, 0.5, 0.52, 2)
+
     y = 3.5
     for n, t, d in [
         ("1", "Ouvrez la fiche de l'enfant", "Menu Membres, puis « Ouvrir »."),
@@ -564,7 +536,7 @@ def build():
         ("3", "Validez", "L'ancienne carte est refusée dès cet instant. "
          "L'abonnement et les entrées restantes sont conservés."),
     ]:
-        etape(s, 8.15, y, n, t, d, couleur=RED, wt=3.9)
+        etape(s, 8.8, y, n, t, d, couleur=RED, wt=3.7)
         y += 1.05
     notes(s, "Si le parent retrouve l'ancienne carte : la reposer sur la fiche, "
              "elle se reactive.")
@@ -573,27 +545,21 @@ def build():
     s = slide()
     entete(s, "Appeler les parents",
            "Menu « Relances WhatsApp » — le chiffre indique combien de parents appeler")
-    box(s, 0.75, 2.15, 11.8, 1.75, fill=GREEN_PALE)
-    text(s, 1.1, 2.4, 5.0, 0.35, "Abonnements à renouveler", size=15, bold=True,
-         color=GREEN_DARK)
-    text(s, 1.1, 2.95, 3.0, 0.3, "Mariama Toure", size=13, bold=True)
-    text(s, 4.3, 2.95, 3.0, 0.3, "Expire le 02/09/2026", size=12.5, color=MUTED)
-    bouton(s, 9.6, 2.9, 1.6, 0.42, "WhatsApp", fill=GREEN_MAIN)
-    text(s, 1.1, 3.4, 10.0, 0.3,
-         "Un clic ouvre WhatsApp avec le message déjà écrit et le bon numéro.",
-         size=12, color=MUTED)
-    box(s, 0.75, 4.1, 11.8, 1.75, fill=PURPLE_PALE)
-    text(s, 1.1, 4.35, 5.0, 0.35, "Anniversaires — 30 prochains jours", size=15,
-         bold=True, color=PURPLE)
-    text(s, 1.1, 4.9, 3.0, 0.3, "Aminata Diallo", size=13, bold=True)
-    text(s, 4.3, 4.9, 3.0, 0.3, "7 ans dans 6 jours", size=12.5, color=MUTED)
-    bouton(s, 9.6, 4.85, 1.6, 0.42, "WhatsApp", fill=GREEN_MAIN)
-    text(s, 1.1, 5.35, 10.0, 0.3,
-         "Proposez une fête d'anniversaire au parc — c'est une vente facile.",
-         size=12, color=MUTED)
+    r = capture(s, "09_relances.png", 0.75, 2.05, 8.3, 4.7)
+    repere(s, r, 0.075, 0.235, 1)
+    repere(s, r, 0.545, 0.30, 2)
+    repere(s, r, 0.545, 0.545, 3)
+    liste_reperes(s, 9.35, 2.35, [
+        ("Le compteur du menu", "Le nombre de parents à contacter aujourd'hui."),
+        ("Abonnements à renouveler",
+         "Un clic sur le bouton vert ouvre WhatsApp, message déjà écrit."),
+        ("Anniversaires à venir",
+         "Proposez une fête au parc : c'est une vente facile."),
+    ], gap=1.35, wt=3.3)
+
     box(s, 0.75, 6.05, 11.8, 0.8, fill=YELLOW)
     text(s, 1.15, 6.3, 11.0, 0.4,
-         "Relisez toujours le message avant d'envoyer, et ajoutez un mot personnel.",
+         "Relisez toujours le message avant d'envoyer et ajoutez un mot personnel.",
          size=15, bold=True, align=PP_ALIGN.CENTER)
     notes(s, "Faire cette tache a un moment calme de la journee.")
 

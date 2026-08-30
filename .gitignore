@@ -16,3 +16,7 @@ dist/
 
 # Aperçu de contrôle qualité (généré)
 formation/_preview.html
+
+# Aperçu de contrôle (généré)
+formation/_preview.html
+formation/outils/shots/
