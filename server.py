@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from park import db, api
+from park import db, api, backup
 from park.auth import get_user_by_token
 
 PORT = int(os.environ.get("PORT", "8730"))
@@ -244,6 +244,7 @@ def main():
     conn = db.connect()
     scan_token = db.get_setting(conn, "scan_token")
     conn.close()
+    backup.start_scheduler()
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     print("=" * 56)
     print("  Didikids Parc — Gestion des abonnements")

@@ -1,7 +1,9 @@
 """API REST — toute la logique métier."""
+import os
 from datetime import datetime, timedelta
 
 from park import db
+from park import backup as backup_mod
 from park.auth import hash_password, verify_password, create_session, delete_session
 
 
@@ -955,6 +957,16 @@ def handle(method, path, query, body, user, conn):
             return update_user(conn, int(arg), body, user)
         if method == "POST":
             return create_user(conn, body)
+
+    if route == "backups":
+        require_super(user)
+        if method == "POST":
+            path, size = backup_mod.backup_now()
+            result = backup_mod.list_backups()
+            result["created"] = os.path.basename(path)
+            result["created_kb"] = size // 1024
+            return result
+        return backup_mod.list_backups()
 
     if route == "settings":
         if method == "GET":

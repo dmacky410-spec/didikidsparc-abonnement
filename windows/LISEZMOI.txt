@@ -41,13 +41,34 @@ LECTEUR DE CARTES ACR122U
 3. Posez une carte : l'écran Accueil valide l'entrée
    automatiquement.
 
-SAUVEGARDE (IMPORTANT)
-----------------------
-Toutes les données (membres, abonnements, paiements,
-visites) sont dans le dossier :  data\
-Copiez ce dossier sur une clé USB régulièrement
-(chaque soir, par exemple). Pour restaurer : remettez-le
-au même endroit.
+SAUVEGARDES (AUTOMATIQUES)
+--------------------------
+Le logiciel se sauvegarde TOUT SEUL : une copie complète est
+créée à chaque démarrage, puis toutes les 24 heures. Les 30
+dernières copies sont conservées dans :
+
+    data\sauvegardes\
+
+Vous n'avez rien à faire. Vous pouvez vérifier la liste dans
+le logiciel : Paramètres -> Sauvegardes automatiques.
+
+>>> CONSEIL FORTEMENT RECOMMANDÉ <<<
+Installez Google Drive (ou OneDrive) sur ce PC, puis dans
+Paramètres -> Sauvegardes automatiques, indiquez un dossier
+situé DANS Google Drive. Vos sauvegardes partiront alors
+toutes seules hors du parc, gratuitement. Si le PC est volé,
+tombe en panne ou prend l'eau, vous récupérez tout.
+
+RESTAURER APRÈS UNE PANNE
+-------------------------
+1. Installez le logiciel sur le nouveau PC (voir plus haut).
+2. Lancez-le une fois, puis fermez-le.
+3. Prenez la sauvegarde la plus récente (un seul fichier,
+   nommé didikidsparc_2026-08-30_15h02.db par exemple).
+4. Copiez-la dans le dossier  data\  du nouveau PC et
+   renommez-la exactement :  didikidsparc.db
+   (remplacez le fichier existant)
+5. Relancez le logiciel : tout est revenu.
 
 EN CAS DE PROBLÈME
 ------------------

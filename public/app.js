@@ -1176,6 +1176,22 @@ async function renderParametres() {
       <button class="btn btn-green mt" id="set-save3">Enregistrer</button>
     </div>
     <div class="card" style="max-width:560px">
+      <h3 class="section-title">💾 Sauvegardes automatiques</h3>
+      <div class="muted">Une copie complète est enregistrée au démarrage du
+        logiciel puis toutes les 24 h. Les 30 dernières sont conservées.</div>
+      <div class="field mt"><label>Dossier des sauvegardes</label>
+        <input id="set-bkdir" value="${esc(s.backup_dir || "")}"
+               placeholder="par défaut : dossier data\\sauvegardes"></div>
+      <div class="muted" style="font-size:12px">💡 Astuce : indiquez ici un dossier
+        Google Drive, OneDrive ou Dropbox installé sur le PC — vos sauvegardes
+        partiront alors toutes seules hors du parc, gratuitement.</div>
+      <div style="display:flex; gap:8px; margin-top:12px">
+        <button class="btn btn-green btn-sm" id="set-bksave">Enregistrer le dossier</button>
+        <button class="btn btn-yellow btn-sm" id="set-bknow">💾 Sauvegarder maintenant</button>
+      </div>
+      <div id="set-bklist" class="mt"></div>
+    </div>
+    <div class="card" style="max-width:560px">
       <h3 class="section-title">🔌 Lecteur RFID (ACR122U)</h3>
       <div class="muted">Sur le PC de l'accueil, ouvrez le fichier
         <code>config_lecteur.txt</code> du dossier du logiciel et recopiez-y ces
@@ -1190,12 +1206,46 @@ async function renderParametres() {
         poste ne doit plus envoyer de lectures. Les lecteurs « émulation clavier »
         n'ont besoin de rien : cliquez dans le champ de la page Accueil.</div>
     </div>`;
+  async function loadBackups() {
+    const zone = $("#set-bklist");
+    if (!zone) return;
+    try {
+      const d = await api("/backups");
+      zone.innerHTML = `
+        <div class="muted" style="font-size:12px">Dossier utilisé :
+          <code>${esc(d.folder)}</code></div>
+        ${d.backups.length === 0
+          ? '<div class="muted mt">Aucune sauvegarde pour l\'instant.</div>'
+          : `<table class="data mt"><thead><tr><th>Sauvegarde</th><th class="num">Taille</th></tr></thead>
+             <tbody>${d.backups.slice(0, 5).map((b) => `
+               <tr><td>${fmtDateTime(b.created_at)}</td>
+                   <td class="num">${b.size_kb} Ko</td></tr>`).join("")}
+             </tbody></table>
+             <div class="muted mt" style="font-size:12px">${d.backups.length} sauvegarde(s) conservée(s)</div>`}`;
+    } catch (err) { zone.innerHTML = `<div class="muted">${esc(err.message)}</div>`; }
+  }
+  loadBackups();
+
   const saveSettings = async (body) => {
     try {
       await api("/settings", { method: "POST", body });
       toast("Paramètres enregistrés ✓", "ok");
     } catch (err) { toast(err.message, "err"); }
   };
+  $("#set-bksave").addEventListener("click", async () => {
+    await saveSettings({ backup_dir: $("#set-bkdir").value.trim() });
+    loadBackups();
+  });
+  $("#set-bknow").addEventListener("click", async () => {
+    const btn = $("#set-bknow");
+    btn.disabled = true; btn.textContent = "Sauvegarde…";
+    try {
+      const d = await api("/backups", { method: "POST", body: {} });
+      toast(`Sauvegarde créée (${d.created_kb} Ko) ✓`, "ok");
+      loadBackups();
+    } catch (err) { toast(err.message, "err"); }
+    btn.disabled = false; btn.textContent = "💾 Sauvegarder maintenant";
+  });
   $("#set-save").addEventListener("click", () => saveSettings({
     park_name: $("#set-name").value, park_address: $("#set-addr").value,
     park_phone: $("#set-phone").value, receipt_footer: $("#set-footer").value,
