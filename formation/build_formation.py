@@ -468,13 +468,13 @@ def build():
             "Inscrire les membres",
             "Attribuer et remplacer les cartes",
             "Vendre au prix du catalogue",
-            "Voir les passages du jour",
+            "Voir les paiements, réimprimer un reçu",
+            "Envoyer les relances WhatsApp",
         ]),
         ("GÉRANT", YELLOW, TEXT, [
             "Tout ce que fait l'agent",
-            "Voir les paiements",
             "Voir le tableau de bord",
-            "Envoyer les relances WhatsApp",
+            "Voir les revenus et statistiques",
             "Consulter tout l'historique",
         ]),
         ("RESPONSABLE", PURPLE, WHITE, [
@@ -482,6 +482,7 @@ def build():
             "Modifier les tarifs",
             "Créer les comptes employés",
             "Annuler un abonnement",
+            "Exports Excel et sauvegardes",
             "Régler les paramètres",
         ]),
     ]
@@ -491,12 +492,12 @@ def build():
         bandeau = card(s, x, 2.25, 3.75, 0.85, fill=couleur)
         text(s, x + 0.2, 2.5, 3.35, 0.4, titre, size=16, bold=True,
              color=txt_couleur, align=PP_ALIGN.CENTER, font=TITLE_FONT)
-        y = 3.45
+        y = 3.3
         for droit in droits:
-            circle(s, x + 0.3, y + 0.04, 0.24, couleur, "", size=9)
-            text(s, x + 0.7, y - 0.02, 2.85, 0.6, droit, size=14, color=TEXT,
+            circle(s, x + 0.3, y + 0.06, 0.22, couleur, "", size=9)
+            text(s, x + 0.68, y - 0.02, 2.87, 0.62, droit, size=13.5, color=TEXT,
                  line=1.15)
-            y += 0.64
+            y += 0.56
         x += 4.0
     notes(s, "Si un menu n'apparait pas chez vous, ce n'est pas une panne : "
              "c'est votre niveau d'acces.")

@@ -82,8 +82,8 @@ en temps réel — l'écran d'accueil valide l'entrée automatiquement.
 | Rôle | Accès |
 |---|---|
 | **Super administrateur** | Tout, plus ce que personne d'autre ne peut faire : prix et types d'abonnements, modification d'un montant encaissé, annulation d'abonnement, comptes employés, paramètres, exports Excel |
-| **Gérant** | Membres, cartes, ventes **au prix catalogue**, paiements, tableau de bord |
-| **Agent accueil** | Entrées, inscription et modification des membres, attribution et remplacement des cartes, ventes **au prix catalogue** — mais ni revenus, ni statistiques, ni réglages |
+| **Gérant** | Tout ce que fait l'agent, plus le tableau de bord et les statistiques |
+| **Agent accueil** | Entrées, inscription et modification des membres, attribution et remplacement des cartes, ventes **au prix catalogue**, consultation des paiements et réimpression des reçus, relances WhatsApp — mais ni statistiques, ni exports, ni réglages |
 
 Chaque vente et chaque entrée enregistre le nom de l'employé qui l'a faite.
 
@@ -123,10 +123,18 @@ L'API REST (`/api/...`) est déjà prête pour les évolutions prévues :
 application mobile, plusieurs points d'entrée (plusieurs ponts RFID peuvent
 pointer vers le même serveur), paiement en ligne, QR code de secours, cloud.
 
-## 💾 Sauvegarde
+## 💾 Sauvegardes
 
-Copiez simplement le fichier `data/didikidsparc.db` (par exemple sur une clé
-USB, chaque soir). Pour restaurer : remettez le fichier et relancez le serveur.
+**Automatiques** : une copie complète est créée au démarrage du logiciel puis
+toutes les 24 h dans `data/sauvegardes/` (30 copies conservées, un seul fichier
+par copie). Rien à faire manuellement.
+
+Le dossier de destination est configurable dans *Paramètres → Sauvegardes
+automatiques* : en le pointant vers un dossier Google Drive / OneDrive installé
+sur le poste, les sauvegardes quittent le parc automatiquement.
+
+**Restaurer** : copier la sauvegarde choisie dans `data/`, la renommer
+`didikidsparc.db` (en remplaçant l'existant), puis relancer le logiciel.
 
 ## ⚙️ Divers
 

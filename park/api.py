@@ -918,11 +918,9 @@ def handle(method, path, query, body, user, conn):
             return sell_subscription(conn, body, user)
 
     if route == "birthdays":
-        require_admin(user)
         return birthdays(conn, days=int(query.get("days", 30)))
 
     if route == "reminders":
-        require_admin(user)
         return expiry_reminders(conn, days=max(0, min(90, int(query.get("days", 7)))))
 
     if route == "export" and arg:
@@ -939,7 +937,6 @@ def handle(method, path, query, body, user, conn):
             return save_type(conn, body)
 
     if route == "payments":
-        require_admin(user)
         return list_payments(conn, query)
 
     if route == "receipts" and arg:
