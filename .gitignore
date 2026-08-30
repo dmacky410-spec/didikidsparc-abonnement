@@ -13,3 +13,6 @@ __pycache__/
 
 # Paquets construits
 dist/
+
+# Aperçu de contrôle qualité (généré)
+formation/_preview.html
