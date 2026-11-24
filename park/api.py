@@ -215,8 +215,13 @@ def block_card(conn, card_id, body):
 
 # ---------------------------------------------------------------- abonnements
 
+MAX_QUANTITE = 50
+
+
 def sell_subscription(conn, body, user):
-    """Vend un abonnement : crée l'abonnement + le paiement, retourne le reçu."""
+    """Vend des entrées : crée l'abonnement + le paiement, retourne le reçu.
+
+    Le tarif est linéaire : N entrées coûtent N fois le prix unitaire."""
     require(body, "member_id", "type_id")
     t = conn.execute("SELECT * FROM subscription_types WHERE id=? AND active=1",
                      (body["type_id"],)).fetchone()
@@ -225,6 +230,18 @@ def sell_subscription(conn, body, user):
     member = conn.execute("SELECT * FROM members WHERE id=?", (body["member_id"],)).fetchone()
     if not member:
         raise ApiError(404, "Membre introuvable")
+
+    brut = body.get("quantity", 1)
+    if brut in (None, ""):
+        brut = 1          # champ absent : vente à l'unité
+    try:
+        quantite = int(brut)
+    except (TypeError, ValueError):
+        raise ApiError(400, "Quantité invalide")
+    if quantite < 1 or quantite > MAX_QUANTITE:
+        raise ApiError(400, f"La quantité doit être comprise entre 1 et {MAX_QUANTITE}")
+    if t["entries"] is None and quantite != 1:
+        raise ApiError(400, "Une formule illimitée ne se vend qu'à l'unité")
 
     start = body.get("start_date") or today()
     try:
@@ -235,15 +252,18 @@ def sell_subscription(conn, body, user):
 
     # Anti-fraude : seul le super administrateur peut modifier le montant.
     # Les autres encaissent au prix catalogue, point final.
-    if user["role"] == "superadmin":
-        amount = int(body.get("amount", t["price"]))
+    prix_catalogue = t["price"] * quantite
+    if user["role"] == "superadmin" and body.get("amount") not in (None, ""):
+        amount = int(body["amount"])
     else:
-        amount = t["price"]
+        amount = prix_catalogue
+
+    entrees = None if t["entries"] is None else t["entries"] * quantite
     cur = conn.execute(
         """INSERT INTO subscriptions
            (member_id, type_id, start_date, end_date, entries_total, entries_left, status, created_at, created_by)
            VALUES (?,?,?,?,?,?,'active',?,?)""",
-        (member["id"], t["id"], start, end, t["entries"], t["entries"], db.now_iso(), user["id"]))
+        (member["id"], t["id"], start, end, entrees, entrees, db.now_iso(), user["id"]))
     sub_id = cur.lastrowid
 
     receipt = next_receipt_number(conn)
@@ -401,7 +421,8 @@ def next_receipt_number(conn):
 def get_receipt(conn, receipt_number):
     row = conn.execute(
         """SELECT p.*, m.child_name, m.parent_name, m.code AS member_code,
-                  t.name AS type_name, s.start_date, s.end_date, s.entries_total,
+                  t.name AS type_name, t.price AS unit_price, t.entries AS unit_entries,
+                  s.start_date, s.end_date, s.entries_total,
                   e.full_name AS cashier
            FROM payments p
            LEFT JOIN members m ON m.id = p.member_id
@@ -413,6 +434,11 @@ def get_receipt(conn, receipt_number):
     if not row:
         raise ApiError(404, "Reçu introuvable")
     receipt = dict(row)
+    # Quantité vendue : le total d'entrées divisé par ce qu'apporte une unité
+    if receipt.get("entries_total") and receipt.get("unit_entries"):
+        receipt["quantity"] = receipt["entries_total"] // receipt["unit_entries"]
+    else:
+        receipt["quantity"] = 1 if receipt.get("type_name") else None
     receipt["park_name"] = db.get_setting(conn, "park_name", "Didikids Parc")
     receipt["park_address"] = db.get_setting(conn, "park_address", "")
     receipt["park_phone"] = db.get_setting(conn, "park_phone", "")

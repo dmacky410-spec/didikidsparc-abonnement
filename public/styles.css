@@ -257,3 +257,43 @@ table.data td.num, table.data th.num { text-align: right; }
   .main { padding: 18px; }
   .grid-2 { grid-template-columns: 1fr; }
 }
+
+/* ============ Sélecteur de quantité (écran de vente) ============ */
+.qty-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.qty-btn {
+  min-width: 54px; padding: 12px 0; border: 2px solid var(--border);
+  background: #fff; border-radius: 12px; font-size: 19px; font-weight: 800;
+  color: var(--green-dark); transition: all .12s;
+}
+.qty-btn:hover { border-color: var(--green-main); transform: translateY(-1px); }
+.qty-btn.selected {
+  background: var(--green-dark); border-color: var(--green-dark); color: #fff;
+}
+.field .qty-row .qty-input, .qty-input {
+  width: 96px; flex: 0 0 96px; padding: 12px 14px; border: 2px dashed var(--border);
+  border-radius: 12px; font-size: 17px; font-weight: 800; text-align: center;
+  color: var(--text-soft); outline: none; margin-left: 4px;
+}
+.qty-input:focus { border-style: solid; border-color: var(--green-main); }
+
+.total-box {
+  background: var(--green-pale); border-radius: 16px;
+  padding: 16px 20px; margin-top: 16px; text-align: center;
+}
+.total-label {
+  font-size: 11px; font-weight: 800; letter-spacing: .6px;
+  color: var(--text-muted); text-transform: uppercase;
+}
+.total-value {
+  font-family: var(--font-title); font-size: 34px; color: var(--green-dark);
+  line-height: 1.15; margin-top: 2px;
+}
+.total-detail { font-size: 13px; font-weight: 700; color: var(--text-soft); margin-top: 2px; }
+
+/* ============ Bascule Semaine / Mois ============ */
+.seg { display: inline-flex; background: var(--green-pale); border-radius: 999px; padding: 4px; gap: 4px; }
+.seg-btn {
+  border: none; background: none; padding: 9px 26px; border-radius: 999px;
+  font-size: 15px; font-weight: 800; color: var(--text-soft);
+}
+.seg-btn.selected { background: var(--green-dark); color: #fff; }

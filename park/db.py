@@ -122,12 +122,6 @@ CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
 
 DEFAULT_PASSWORD = "admin123"
 
-DEFAULT_TYPES = [
-    ("Entrée simple", 50000, 1, 1),
-    ("Mensuel 4 entrées", 180000, 4, 30),
-    ("Mensuel 8 entrées", 320000, 8, 30),
-    ("VIP Illimité", 500000, None, 30),
-]
 
 DEFAULT_SETTINGS = {
     "park_name": "Didikids Parc",
@@ -228,12 +222,11 @@ def init():
     _migrate_roles(conn)
     _migrate_columns(conn)
 
-    # Types d'abonnements par défaut
+    # Catalogue officiel, uniquement sur une base neuve : une fois le parc en
+    # service, les tarifs se modifient depuis la page Abonnements.
     if conn.execute("SELECT COUNT(*) FROM subscription_types").fetchone()[0] == 0:
-        conn.executemany(
-            "INSERT INTO subscription_types (name, price, entries, validity_days) VALUES (?,?,?,?)",
-            DEFAULT_TYPES,
-        )
+        from park import catalogue
+        catalogue.appliquer(conn, desactiver_anciens=False)
 
     # Paramètres par défaut
     for key, value in DEFAULT_SETTINGS.items():

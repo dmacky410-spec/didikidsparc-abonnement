@@ -580,18 +580,44 @@ async function openMember(id, onChange) {
 
 async function sellSubscription(member, onSold) {
   const types = await api("/types").catch(() => []);
-  const activeTypes = types.filter((t) => t.active);
-  let selected = null;
+  const vendables = types.filter((t) => t.active && t.entries != null);
+  if (vendables.length === 0) {
+    toast("Aucune formule à vendre — créez-en une dans Abonnements", "err");
+    return;
+  }
+
+  // Les formules sont groupées par durée d'engagement : 7 jours = semaine, sinon mois
+  const periodes = [...new Set(vendables.map((t) => t.validity_days))].sort((a, b) => a - b);
+  const nomPeriode = (j) => (j <= 7 ? "Semaine" : j <= 31 ? "Mois" : j + " jours");
+  let periode = periodes.includes(30) ? 30 : periodes[0];
+  let formule = null;
+  let quantite = 1;
+
   const { el, close } = modal(`
     <h3>💳 Vendre un abonnement — ${esc(member.child_name)}</h3>
-    <div class="type-cards" id="s-types">
-      ${activeTypes.map((t) => `
-        <div class="type-card" data-type="${t.id}">
-          <div class="tc-name">${esc(t.name)}</div>
-          <div class="tc-price">${GNF(t.price)}</div>
-          <div class="tc-info">${t.entries == null ? "Entrées illimitées" : t.entries + " entrée(s)"} · ${t.validity_days} jours</div>
-        </div>`).join("")}
+
+    ${periodes.length > 1 ? `
+      <div class="field"><label>Durée</label>
+        <div class="seg" id="s-periodes">
+          ${periodes.map((j) => `
+            <button type="button" class="seg-btn" data-periode="${j}">${nomPeriode(j)}</button>`).join("")}
+        </div></div>` : ""}
+
+    <div class="field"><label>Formule</label>
+      <div class="type-cards" id="s-types"></div></div>
+
+    <div class="field"><label>Nombre de périodes à payer d'avance</label>
+      <div class="qty-row">
+        ${[1, 2, 3, 4].map((n) => `<button type="button" class="qty-btn" data-qty="${n}">${n}</button>`).join("")}
+        <input id="s-qty" class="qty-input" type="number" min="1" max="50" value="1" aria-label="Autre nombre">
+      </div></div>
+
+    <div class="total-box">
+      <div class="total-label">TOTAL À ENCAISSER</div>
+      <div class="total-value" id="s-total">—</div>
+      <div class="total-detail" id="s-detail">Choisissez une formule</div>
     </div>
+
     <div class="grid-2 mt">
       <div class="field"><label>Date de début</label><input id="s-start" type="date" value="${todayISO()}"></div>
       <div class="field"><label>Mode de paiement</label>
@@ -602,35 +628,84 @@ async function sellSubscription(member, onSold) {
           <option value="carte">Carte bancaire</option>
         </select></div>
     </div>
-    <div class="field"><label>Montant payé (GNF)</label>
-      <input id="s-amount" type="number" min="0" ${isSuper() ? "" : "readonly"}>
-      ${isSuper() ? "" : '<div class="muted" style="font-size:12px; margin-top:4px">🔒 Prix catalogue — seul le super administrateur peut modifier le montant</div>'}</div>
+
+    ${isSuper() ? `
+      <div class="field"><label>Montant encaissé (GNF) — vide = prix catalogue</label>
+        <input id="s-amount" type="number" min="0" placeholder="prix catalogue"></div>` : ""}
+
     <div class="modal-actions">
       <button class="btn btn-ghost" id="s-cancel">Annuler</button>
       <button class="btn btn-green" id="s-save" disabled>Encaisser et imprimer le reçu</button>
     </div>`, true);
 
-  el.querySelectorAll("[data-type]").forEach((card) =>
-    card.addEventListener("click", () => {
-      el.querySelectorAll(".type-card").forEach((c) => c.classList.remove("selected"));
-      card.classList.add("selected");
-      selected = activeTypes.find((t) => t.id === +card.dataset.type);
-      $("#s-amount", el).value = selected.price;
-      $("#s-save", el).disabled = false;
+  function dessinerFormules() {
+    const liste = vendables.filter((t) => t.validity_days === periode)
+                           .sort((a, b) => a.price - b.price);
+    $("#s-types", el).innerHTML = liste.map((t) => `
+      <div class="type-card" data-type="${t.id}">
+        <div class="tc-name">${esc(t.name.split("—")[0].trim())}</div>
+        <div class="tc-price">${GNF(t.price)}</div>
+        <div class="tc-info">${t.entries} entrée(s) · ${t.validity_days} jours</div>
+      </div>`).join("");
+    $("#s-types", el).querySelectorAll("[data-type]").forEach((c) =>
+      c.addEventListener("click", () => {
+        formule = liste.find((t) => t.id === +c.dataset.type);
+        el.querySelectorAll(".type-card").forEach((x) => x.classList.remove("selected"));
+        c.classList.add("selected");
+        rafraichir();
+      }));
+    el.querySelectorAll(".seg-btn").forEach((b) =>
+      b.classList.toggle("selected", +b.dataset.periode === periode));
+    if (formule && formule.validity_days !== periode) formule = null;
+    rafraichir();
+  }
+
+  function rafraichir() {
+    el.querySelectorAll(".qty-btn").forEach((b) =>
+      b.classList.toggle("selected", +b.dataset.qty === quantite));
+    if (!formule) {
+      $("#s-total", el).textContent = "—";
+      $("#s-detail", el).textContent = "Choisissez une formule";
+      $("#s-save", el).disabled = true;
+      return;
+    }
+    const total = formule.price * quantite;
+    const entrees = formule.entries * quantite;
+    $("#s-total", el).textContent = GNF(total);
+    $("#s-detail", el).textContent =
+      `${quantite > 1 ? quantite + " × " : ""}${formule.name} — ${entrees} entrée(s) au total`;
+    $("#s-save", el).disabled = false;
+  }
+
+  el.querySelectorAll(".seg-btn").forEach((b) =>
+    b.addEventListener("click", () => { periode = +b.dataset.periode; dessinerFormules(); }));
+  el.querySelectorAll(".qty-btn").forEach((b) =>
+    b.addEventListener("click", () => {
+      quantite = +b.dataset.qty; $("#s-qty", el).value = quantite; rafraichir();
     }));
+  $("#s-qty", el).addEventListener("input", () => {
+    const n = parseInt($("#s-qty", el).value, 10);
+    if (n >= 1) { quantite = Math.min(50, n); rafraichir(); }
+  });
+  dessinerFormules();
+
   $("#s-cancel", el).addEventListener("click", close);
   $("#s-save", el).addEventListener("click", async () => {
+    const btn = $("#s-save", el);
+    btn.disabled = true;
     try {
-      const r = await api("/subscriptions", { method: "POST", body: {
-        member_id: member.id, type_id: selected.id,
+      const body = {
+        member_id: member.id, type_id: formule.id, quantity: quantite,
         start_date: $("#s-start", el).value, method: $("#s-method", el).value,
-        amount: +$("#s-amount", el).value || selected.price,
-      } });
+      };
+      const montant = $("#s-amount", el) && $("#s-amount", el).value;
+      if (montant) body.amount = +montant;
+      const r = await api("/subscriptions", { method: "POST", body });
       toast("Abonnement enregistré ✓", "ok");
       close();
       if (onSold) onSold(r.member);
       printReceipt(r.receipt);
-    } catch (err) { toast(err.message, "err"); }
+    } catch (err) { toast(err.message, "err"); btn.disabled = false; }
   });
 }
 
@@ -652,7 +727,7 @@ function printReceipt(r) {
       <div class="r-row"><span>Membre</span><b>${esc(r.child_name || "—")}</b></div>
       ${r.member_code ? `<div class="r-row"><span>Code</span><span>${esc(r.member_code)}</span></div>` : ""}
       ${r.type_name ? `
-        <div class="r-row"><span>Abonnement</span><b>${esc(r.type_name)}</b></div>
+        <div class="r-row"><span>Formule</span><b>${r.quantity > 1 ? r.quantity + " × " : ""}${esc(r.type_name)}</b></div>
         <div class="r-row"><span>Validité</span><span>${fmtDate(r.start_date)} → ${fmtDate(r.end_date)}</span></div>
         <div class="r-row"><span>Entrées</span><span>${r.entries_total == null ? "Illimitées" : r.entries_total}</span></div>` : ""}
       <hr>
