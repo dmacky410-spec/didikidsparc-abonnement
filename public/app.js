@@ -590,47 +590,26 @@ async function sellSubscription(member, onSold) {
   }
 
   // Les caractéristiques se déduisent des données, pas du libellé
-  const freqDe = (t) => (t.validity_days <= 7 ? t.entries : Math.round(t.entries / 4));
-  const periodeDe = (t) => (t.validity_days <= 7 ? "semaine" : "mois");
-  const uniq = (xs) => [...new Set(xs)].sort((a, b) => a - b);
-
-  const heuresDispo = uniq(affiche.map((t) => t.hours_per_session));
-  const freqDispo = uniq(affiche.map(freqDe));
-  const periodesDispo = [...new Set(affiche.map(periodeDe))];
-
-  let onglet = affiche.length ? "affiche" : "libre";
-  let heures = heuresDispo[0] || 1;
-  let freq = freqDispo[0] || 2;
-  let periode = periodesDispo.includes("mois") ? "mois" : periodesDispo[0];
+  let onglet = "affiche";
   let libreType = libres[0] || null;
-  let quantite = 1;
-
-  const seg = (id, options, actif) => `
-    <div class="seg" data-seg="${id}">
-      ${options.map((o) => `<button type="button" class="seg-btn${o.v === actif ? " selected" : ""}"
-        data-val="${o.v}">${o.t}</button>`).join("")}
-    </div>`;
 
   const { el, close } = modal(`
     <h3>💳 Vendre — ${esc(member.child_name)}</h3>
 
     <div class="tabs" id="s-tabs">
-      ${affiche.length ? '<button type="button" class="tab-btn selected" data-tab="affiche">Formule de l\'affiche</button>' : ""}
+      <button type="button" class="tab-btn selected" data-tab="affiche">Abonnement</button>
       ${libres.length ? '<button type="button" class="tab-btn" data-tab="libre">Entrée libre</button>' : ""}
     </div>
 
     <div id="pan-affiche" ${onglet === "affiche" ? "" : "hidden"}>
-      <div class="field"><label>Durée d'une séance</label>
-        ${seg("heures", heuresDispo.map((h) => ({ v: h, t: h + " heure" + (h > 1 ? "s" : "") })), heures)}</div>
-      <div class="field"><label>Combien de fois par semaine</label>
-        ${seg("freq", freqDispo.map((f) => ({ v: f, t: f + " fois" })), freq)}</div>
-      <div class="field"><label>Durée de l'abonnement</label>
-        ${seg("periode", periodesDispo.map((p) => ({ v: p, t: p === "semaine" ? "Semaine" : "Mois" })), periode)}</div>
-      <div class="field"><label>Nombre de périodes payées d'avance</label>
-        <div class="qty-row">
-          ${[1, 2, 3].map((n) => `<button type="button" class="qty-btn${n === 1 ? " selected" : ""}" data-qty="${n}">${n}</button>`).join("")}
-          <input id="s-qty" class="qty-input" type="number" min="1" max="50" value="1" aria-label="Autre nombre">
-        </div></div>
+      <div class="grid-2">
+        <div class="field"><label>Durée d'une séance (heures)</label>
+          <input id="s-heures" type="number" min="1" max="12" placeholder="1 ou 2"></div>
+        <div class="field"><label>Nombre de fois par semaine</label>
+          <input id="s-fois" type="number" min="1" max="7" placeholder="2 ou 3"></div>
+      </div>
+      <div class="field"><label>Durée de l'abonnement (nombre de semaines)</label>
+        <input id="s-semaines" type="number" min="1" max="52" placeholder="1 = semaine · 4 = mois"></div>
     </div>
 
     <div id="pan-libre" ${onglet === "libre" ? "" : "hidden"}>
@@ -670,38 +649,40 @@ async function sellSubscription(member, onSold) {
       <button class="btn btn-green" id="s-save">Encaisser et imprimer le reçu</button>
     </div>`, true);
 
-  function formuleAffiche() {
-    return affiche.find((t) => t.hours_per_session === heures
-      && freqDe(t) === freq && periodeDe(t) === periode) || null;
+  const lire = (id) => parseInt(($(id, el).value || "").trim(), 10);
+
+  function surMesure() {
+    const h = lire("#s-heures"), f = lire("#s-fois"), sem = lire("#s-semaines");
+    if (!(h >= 1 && f >= 1 && sem >= 1)) return null;
+    return { h, f, sem, seances: f * sem, jours: sem * 7 };
   }
 
   function rafraichir() {
     const total = $("#s-total", el), detail = $("#s-detail", el);
     const save = $("#s-save", el), ref = $("#s-reference", el);
     const montant = +($("#s-montant", el).value || 0);
-    let choix = null, libelle = "";
+    let ok = false, libelle = "";
 
     if (onglet === "affiche") {
-      choix = formuleAffiche();
-      if (!choix) {
-        total.textContent = "—";
-        detail.textContent = "Cette combinaison n'existe pas sur l'affiche";
-        ref.textContent = "";
-        save.disabled = true; return;
+      const c = surMesure();
+      if (!c) {
+        libelle = "Renseignez la durée, la fréquence et le nombre de semaines";
+      } else {
+        ok = true;
+        libelle = `${c.h}h · ${c.f} fois/semaine · ${c.sem} semaine(s)`
+                + ` — ${c.seances} séance(s)`;
       }
-      libelle = `${quantite > 1 ? quantite + " × " : ""}${choix.name}`
-        + ` — ${choix.entries * quantite} séance(s) de ${choix.hours_per_session}h`;
-      ref.textContent = `📋 Tarif de l'affiche : ${GNF(choix.price * quantite)}`
-        + (quantite > 1 ? ` (${quantite} × ${GNF(choix.price)})` : "");
+      ref.textContent = "📋 Reportez-vous à l'affiche pour le tarif";
     } else {
-      choix = libreType;
-      libelle = choix ? `${choix.name} — ${choix.entries} séance(s)` : "Choisissez une formule";
+      ok = !!libreType;
+      libelle = libreType ? `${libreType.name} — ${libreType.entries} séance(s)`
+                          : "Choisissez une formule";
       ref.textContent = "Hors affiche : montant libre";
     }
 
     total.textContent = montant > 0 ? GNF(montant) : "—";
-    detail.textContent = libelle + (montant > 0 ? "" : " · saisissez le montant");
-    save.disabled = !(choix && montant > 0);
+    detail.textContent = libelle + (ok && montant <= 0 ? " · saisissez le montant" : "");
+    save.disabled = !(ok && montant > 0);
   }
 
   el.querySelectorAll(".tab-btn").forEach((b) =>
@@ -711,37 +692,12 @@ async function sellSubscription(member, onSold) {
       el.querySelectorAll(".tab-btn").forEach((x) => x.classList.toggle("selected", x === b));
       $("#pan-affiche", el).hidden = onglet !== "affiche";
       $("#pan-libre", el).hidden = onglet !== "libre";
-      // Le montant du précédent onglet n'a plus de sens : on repart de zéro
       $("#s-montant", el).value = "";
       rafraichir();
     }));
 
-  el.querySelectorAll("[data-seg]").forEach((groupe) =>
-    groupe.querySelectorAll(".seg-btn").forEach((b) =>
-      b.addEventListener("click", () => {
-        groupe.querySelectorAll(".seg-btn").forEach((x) => x.classList.toggle("selected", x === b));
-        const v = b.dataset.val;
-        if (groupe.dataset.seg === "heures") heures = +v;
-        else if (groupe.dataset.seg === "freq") freq = +v;
-        else periode = v;
-        rafraichir();
-      })));
-
-  el.querySelectorAll(".qty-btn").forEach((b) =>
-    b.addEventListener("click", () => {
-      quantite = +b.dataset.qty;
-      $("#s-qty", el).value = quantite;
-      el.querySelectorAll(".qty-btn").forEach((x) => x.classList.toggle("selected", x === b));
-      rafraichir();
-    }));
-  $("#s-qty", el).addEventListener("input", () => {
-    const n = parseInt($("#s-qty", el).value, 10);
-    if (n >= 1) {
-      quantite = Math.min(50, n);
-      el.querySelectorAll(".qty-btn").forEach((x) => x.classList.remove("selected"));
-      rafraichir();
-    }
-  });
+  ["#s-heures", "#s-fois", "#s-semaines", "#s-montant"].forEach((id) =>
+    $(id, el).addEventListener("input", rafraichir));
 
   el.querySelectorAll("[data-libre]").forEach((c) =>
     c.addEventListener("click", () => {
@@ -749,7 +705,6 @@ async function sellSubscription(member, onSold) {
       el.querySelectorAll("[data-libre]").forEach((x) => x.classList.toggle("selected", x === c));
       rafraichir();
     }));
-  $("#s-montant", el).addEventListener("input", rafraichir);
 
   rafraichir();
   $("#s-cancel", el).addEventListener("click", close);
@@ -761,8 +716,9 @@ async function sellSubscription(member, onSold) {
                      method: $("#s-method", el).value };
       body.amount = +$("#s-montant", el).value;
       if (onglet === "affiche") {
-        body.type_id = formuleAffiche().id;
-        body.quantity = quantite;
+        const c = surMesure();
+        Object.assign(body, { custom: true, hours_per_session: c.h,
+                              times_per_week: c.f, weeks: c.sem });
       } else {
         body.type_id = libreType.id;
       }

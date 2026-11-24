@@ -221,11 +221,39 @@ def block_card(conn, card_id, body):
 MAX_QUANTITE = 50
 
 
+def type_sur_mesure(conn, body):
+    """Formule composée au comptoir : retrouve ou crée le type correspondant."""
+    try:
+        heures = int(body.get("hours_per_session") or 1)
+        fois = int(body.get("times_per_week") or 1)
+        semaines = int(body.get("weeks") or 1)
+    except (TypeError, ValueError):
+        raise ApiError(400, "Durée, fréquence et nombre de semaines doivent être des nombres")
+    if not (1 <= heures <= 12 and 1 <= fois <= 7 and 1 <= semaines <= 52):
+        raise ApiError(400, "Valeurs hors limites (séance 1-12 h, 1-7 fois/semaine, 1-52 semaines)")
+
+    seances = fois * semaines
+    jours = semaines * 7
+    nom = f"{heures}h · {fois} fois/semaine · {semaines} semaine(s)"
+    ligne = conn.execute("SELECT id FROM subscription_types WHERE name=?", (nom,)).fetchone()
+    if ligne:
+        conn.execute("UPDATE subscription_types SET active=1 WHERE id=?", (ligne[0],))
+        return ligne[0]
+    cur = conn.execute(
+        """INSERT INTO subscription_types
+           (name, price, entries, validity_days, hours_per_session, free_price, active)
+           VALUES (?,0,?,?,?,1,1)""", (nom, seances, jours, heures))
+    return cur.lastrowid
+
+
 def sell_subscription(conn, body, user):
     """Vend des entrées : crée l'abonnement + le paiement, retourne le reçu.
 
     Le tarif est linéaire : N entrées coûtent N fois le prix unitaire."""
-    require(body, "member_id", "type_id")
+    require(body, "member_id")
+    if body.get("custom"):
+        body["type_id"] = type_sur_mesure(conn, body)
+    require(body, "type_id")
     t = conn.execute("SELECT * FROM subscription_types WHERE id=? AND active=1",
                      (body["type_id"],)).fetchone()
     if not t:
