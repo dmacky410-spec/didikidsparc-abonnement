@@ -745,7 +745,10 @@ async function renderAbonnements() {
   const c = $("#page-content");
   c.innerHTML = `
     <div class="page-head"><h2>💳 Types d'abonnements</h2>
-      <button class="btn btn-yellow" id="t-new">+ Nouveau type</button></div>
+      <div style="display:flex; gap:10px">
+        <button class="btn btn-ghost" id="t-catalogue">📋 Appliquer le catalogue de l'affiche</button>
+        <button class="btn btn-yellow" id="t-new">+ Nouveau type</button>
+      </div></div>
     <div class="muted" style="margin-bottom:14px">Pour vendre un abonnement : ouvrez la fiche du membre
       (page <b>Membres</b>) puis « Vendre un abonnement ».</div>
     <div class="type-cards" id="t-list"></div>`;
@@ -764,6 +767,17 @@ async function renderAbonnements() {
       b.addEventListener("click", () => typeForm(types.find((t) => t.id === +b.dataset.edit), load)));
   }
   $("#t-new").addEventListener("click", () => typeForm(null, load));
+  $("#t-catalogue").addEventListener("click", async () => {
+    if (!confirm("Remettre les 8 formules de l'affiche tarifaire ?\n\n" +
+                 "Les formules qui ne figurent pas sur l'affiche seront désactivées " +
+                 "(jamais supprimées) : les abonnements déjà vendus et l'historique " +
+                 "restent intacts.")) return;
+    try {
+      await api("/types/catalogue", { method: "POST", body: {} });
+      toast("Catalogue de l'affiche appliqué ✓", "ok");
+      load();
+    } catch (err) { toast(err.message, "err"); }
+  });
   load();
 }
 

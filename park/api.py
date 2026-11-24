@@ -957,6 +957,10 @@ def handle(method, path, query, body, user, conn):
         if method == "GET":
             return list_types(conn, include_inactive=is_admin(user))
         require_super(user)
+        if method == "POST" and arg == "catalogue":
+            from park import catalogue
+            catalogue.appliquer(conn)
+            return list_types(conn, include_inactive=True)
         if method == "POST" and arg:
             return save_type(conn, body, int(arg))
         if method == "POST":
