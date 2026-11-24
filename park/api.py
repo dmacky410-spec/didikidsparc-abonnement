@@ -255,11 +255,17 @@ def sell_subscription(conn, body, user):
 
     # Anti-fraude : seul le super administrateur peut modifier le montant.
     # Les autres encaissent au prix catalogue, point final.
-    prix_catalogue = t["price"] * quantite
-    if user["role"] == "superadmin" and body.get("amount") not in (None, ""):
-        amount = int(body["amount"])
-    else:
-        amount = prix_catalogue
+    # Le montant est toujours saisi au comptoir : l'affiche sert de référence,
+    # elle n'impose pas le prix. Chaque encaissement porte le nom de l'employé.
+    saisi = body.get("amount")
+    if saisi in (None, ""):
+        raise ApiError(400, "Saisissez le montant encaissé")
+    try:
+        amount = int(saisi)
+    except (TypeError, ValueError):
+        raise ApiError(400, "Montant invalide")
+    if amount < 0:
+        raise ApiError(400, "Le montant ne peut pas être négatif")
 
     entrees = None if t["entries"] is None else t["entries"] * quantite
     cur = conn.execute(

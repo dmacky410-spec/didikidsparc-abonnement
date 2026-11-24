@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS subscription_types (
   entries       INTEGER,              -- en heures ; NULL = illimité
   validity_days INTEGER NOT NULL,
   hours_per_session INTEGER NOT NULL DEFAULT 1,
+  free_price    INTEGER NOT NULL DEFAULT 0,   -- 1 = montant saisi par l'employé
   active        INTEGER NOT NULL DEFAULT 1
 );
 
@@ -221,6 +222,9 @@ def _migrate_hours(conn):
     if "hours_per_session" not in cols:
         conn.execute("ALTER TABLE subscription_types "
                      "ADD COLUMN hours_per_session INTEGER NOT NULL DEFAULT 1")
+    if "free_price" not in cols:
+        conn.execute("ALTER TABLE subscription_types "
+                     "ADD COLUMN free_price INTEGER NOT NULL DEFAULT 0")
 
 
 def init():

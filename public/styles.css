@@ -297,3 +297,11 @@ table.data td.num, table.data th.num { text-align: right; }
   font-size: 15px; font-weight: 800; color: var(--text-soft);
 }
 .seg-btn.selected { background: var(--green-dark); color: #fff; }
+
+/* ============ Onglets de l'écran de vente ============ */
+.tabs { display: flex; gap: 6px; border-bottom: 2px solid var(--green-pale); margin-bottom: 18px; }
+.tab-btn {
+  border: none; background: none; padding: 11px 20px; font-size: 15px; font-weight: 800;
+  color: var(--text-muted); border-bottom: 3px solid transparent; margin-bottom: -2px;
+}
+.tab-btn.selected { color: var(--green-dark); border-bottom-color: var(--green-dark); }
