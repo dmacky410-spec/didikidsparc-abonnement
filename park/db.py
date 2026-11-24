@@ -65,8 +65,9 @@ CREATE TABLE IF NOT EXISTS subscription_types (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   name          TEXT NOT NULL,
   price         INTEGER NOT NULL,
-  entries       INTEGER,              -- NULL = illimité
+  entries       INTEGER,              -- en heures ; NULL = illimité
   validity_days INTEGER NOT NULL,
+  hours_per_session INTEGER NOT NULL DEFAULT 1,
   active        INTEGER NOT NULL DEFAULT 1
 );
 
@@ -214,12 +215,21 @@ def _migrate_columns(conn):
         """)
 
 
+def _migrate_hours(conn):
+    """Ajoute la durée de séance aux bases créées avant l'unité « heure »."""
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(subscription_types)")]
+    if "hours_per_session" not in cols:
+        conn.execute("ALTER TABLE subscription_types "
+                     "ADD COLUMN hours_per_session INTEGER NOT NULL DEFAULT 1")
+
+
 def init():
     os.makedirs(DATA_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA journal_mode = WAL")
     conn.executescript(SCHEMA)
     _migrate_roles(conn)
+    _migrate_hours(conn)
     _migrate_columns(conn)
 
     # Catalogue officiel, uniquement sur une base neuve : une fois le parc en

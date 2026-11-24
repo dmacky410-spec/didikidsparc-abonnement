@@ -303,7 +303,7 @@ async function renderAccueil() {
           <div class="member-name">${esc(m.child_name)}</div>
           <div class="sub-line">${esc(m.code)} · ${esc(subName)}</div>
           <div class="result-stats">
-            <div class="stat"><div class="v">${entries}</div><div class="l">Entrées restantes</div></div>
+            <div class="stat"><div class="v">${entries}</div><div class="l">Séances restantes</div></div>
             <div class="stat"><div class="v" style="font-size:17px; padding-top:6px">${expiry}</div><div class="l">Expire le</div></div>
             ${loy ? `<div class="stat"><div class="v">${loy.remaining}</div><div class="l">Avant visite offerte</div></div>` : ""}
           </div>
@@ -386,7 +386,7 @@ async function renderMembres() {
               <td>${esc(m.phone || "—")}</td>
               <td>${m.card_uid ? '<span class="badge badge-green">✓ Carte</span>' : '<span class="badge badge-gray">Aucune</span>'}</td>
               <td>${s ? `<span class="badge badge-green">${esc(s.type_name)}</span>
-                         <span class="muted">${s.entries_left == null ? "∞" : s.entries_left} restantes · exp. ${fmtDate(s.end_date)}</span>`
+                         <span class="muted">${s.entries_left == null ? "∞" : s.entries_left + " séance(s)"} · exp. ${fmtDate(s.end_date)}</span>`
                       : '<span class="badge badge-red">Inactif</span>'}</td>
               <td><button class="btn btn-ghost btn-sm" data-open="${m.id}">Ouvrir</button></td></tr>`;
           }).join("")}
@@ -462,7 +462,8 @@ async function openMember(id, onChange) {
         </div>
         <div>
           ${s ? `<span class="badge badge-green">${esc(s.type_name)}</span>
-                 <div class="muted mt">Entrées restantes : <b>${s.entries_left == null ? "Illimité" : s.entries_left}</b><br>
+                 <div class="muted mt">Séances restantes : <b>${s.entries_left == null ? "Illimité" : s.entries_left}</b>${
+                   s.hours_per_session > 1 ? ` <span class="muted">(de ${s.hours_per_session}h)</span>` : ""}<br>
                  Valide du ${fmtDate(s.start_date)} au <b>${fmtDate(s.end_date)}</b></div>`
               : '<span class="badge badge-red">Aucun abonnement actif</span>'}
         </div>
@@ -645,7 +646,7 @@ async function sellSubscription(member, onSold) {
       <div class="type-card" data-type="${t.id}">
         <div class="tc-name">${esc(t.name.split("—")[0].trim())}</div>
         <div class="tc-price">${GNF(t.price)}</div>
-        <div class="tc-info">${t.entries} entrée(s) · ${t.validity_days} jours</div>
+        <div class="tc-info">${t.entries} séances de ${t.hours_per_session}h · ${t.validity_days} jours</div>
       </div>`).join("");
     $("#s-types", el).querySelectorAll("[data-type]").forEach((c) =>
       c.addEventListener("click", () => {
@@ -673,7 +674,7 @@ async function sellSubscription(member, onSold) {
     const entrees = formule.entries * quantite;
     $("#s-total", el).textContent = GNF(total);
     $("#s-detail", el).textContent =
-      `${quantite > 1 ? quantite + " × " : ""}${formule.name} — ${entrees} entrée(s) au total`;
+      `${quantite > 1 ? quantite + " × " : ""}${formule.name} — ${entrees} séance(s) au total`;
     $("#s-save", el).disabled = false;
   }
 
@@ -790,7 +791,9 @@ function typeForm(t, onSaved) {
       <div class="field"><label>Prix (GNF) *</label><input id="t-price" type="number" min="0" value="${v.price ?? ""}"></div>
       <div class="field"><label>Validité (jours) *</label><input id="t-days" type="number" min="1" value="${v.validity_days ?? 30}"></div>
     </div>
-    <div class="field"><label>Nombre d'entrées (vide = illimité)</label>
+    <div class="field"><label>Durée d'une séance (heures)</label>
+      <input id="t-hours" type="number" min="1" max="12" value="${v.hours_per_session || 1}"></div>
+    <div class="field"><label>Nombre de séances (vide = illimité)</label>
       <input id="t-entries" type="number" min="1" value="${v.entries ?? ""}" placeholder="Illimité"></div>
     ${v.id ? `<div class="field"><label><input type="checkbox" id="t-active" ${v.active ? "checked" : ""}>
       Type actif (proposé à la vente)</label></div>` : ""}
@@ -805,6 +808,7 @@ function typeForm(t, onSaved) {
         name: $("#t-name", el).value, price: $("#t-price", el).value,
         validity_days: $("#t-days", el).value,
         entries: $("#t-entries", el).value || null,
+        hours_per_session: $("#t-hours", el).value || 1,
         active: v.id ? $("#t-active", el).checked : true,
       } });
       toast("Type enregistré ✓", "ok"); close(); onSaved();

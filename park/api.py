@@ -76,14 +76,17 @@ def current_subscription(conn, member_id):
     """Abonnement valide aujourd'hui, avec des entrées restantes (ou illimité).
     S'il y en a plusieurs, on consomme d'abord celui qui expire le plus tôt."""
     row = conn.execute(
-        """SELECT s.*, t.name AS type_name
+        """SELECT s.*, t.name AS type_name,
+                  COALESCE(t.hours_per_session, 1) AS hours_per_session
            FROM subscriptions s JOIN subscription_types t ON t.id=s.type_id
            WHERE s.member_id=? AND s.status='active'
              AND s.start_date <= ? AND s.end_date >= ?
              AND (s.entries_left IS NULL OR s.entries_left > 0)
            ORDER BY s.end_date ASC LIMIT 1""",
         (member_id, today(), today())).fetchone()
-    return dict(row) if row else None
+    if not row:
+        return None
+    return dict(row)
 
 
 def list_members(conn, query):
@@ -330,14 +333,16 @@ def check_in(conn, body, user):
     if not sub:
         # Distinguer « expiré » de « plus d'entrées » pour un message clair
         last = conn.execute(
-            """SELECT s.*, t.name AS type_name FROM subscriptions s
+            """SELECT s.*, t.name AS type_name,
+                      COALESCE(t.hours_per_session, 1) AS hours_per_session
+               FROM subscriptions s
                JOIN subscription_types t ON t.id=s.type_id
                WHERE s.member_id=? AND s.status='active'
                ORDER BY s.end_date DESC LIMIT 1""", (member["id"],)).fetchone()
         if last and last["end_date"] < today():
             return refuse(f"Abonnement expiré le {last['end_date']}", member["id"], last["id"])
         if last and last["entries_left"] == 0:
-            return refuse("Plus d'entrées disponibles", member["id"], last["id"])
+            return refuse("Plus de séances disponibles", member["id"], last["id"])
         return refuse("Aucun abonnement actif", member["id"])
 
     # Avertissement si l'enfant est déjà passé aujourd'hui (double passage)
@@ -738,15 +743,19 @@ def save_type(conn, body, type_id=None):
     require(body, "name", "price", "validity_days")
     entries = body.get("entries")
     entries = int(entries) if entries not in (None, "", "null") else None
+    heures = max(1, min(12, int(body.get("hours_per_session") or 1)))
     if type_id:
         conn.execute(
-            "UPDATE subscription_types SET name=?, price=?, entries=?, validity_days=?, active=? WHERE id=?",
+            """UPDATE subscription_types
+               SET name=?, price=?, entries=?, validity_days=?, hours_per_session=?, active=?
+               WHERE id=?""",
             (body["name"].strip(), int(body["price"]), entries, int(body["validity_days"]),
-             1 if body.get("active", True) else 0, type_id))
+             heures, 1 if body.get("active", True) else 0, type_id))
     else:
         conn.execute(
-            "INSERT INTO subscription_types (name, price, entries, validity_days) VALUES (?,?,?,?)",
-            (body["name"].strip(), int(body["price"]), entries, int(body["validity_days"])))
+            """INSERT INTO subscription_types
+               (name, price, entries, validity_days, hours_per_session) VALUES (?,?,?,?,?)""",
+            (body["name"].strip(), int(body["price"]), entries, int(body["validity_days"]), heures))
     return list_types(conn, include_inactive=True)
 
 
